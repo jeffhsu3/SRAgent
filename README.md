@@ -12,6 +12,8 @@ bioRxiv 2025.02.27.640494; doi: [https://doi.org/10.1101/2025.02.27.640494](http
 
 # Install
 
+## Option 1: Via conda
+
 Create a conda environment [optional]: 
 
 ```bash
@@ -26,10 +28,32 @@ git clone https://github.com/ArcInstitute/SRAgent.git \
   && cd SRAgent
 ```
 
+## Option 2: Via UV
+
+Create a uv venv:
+
+```bash
+uv venv
+```
+
+Source the venv:
+
+```bash
+source .venv/bin/activate
+```
+
+## Install the package
+
 Install the package:
     
 ```bash
 pip install .
+```
+
+For development, install the package with the `dev` optional dependencies:
+
+```bash
+pip install -e ".[dev]"
 ```
 
 ## Environmental variables

@@ -83,7 +83,7 @@ def create_entrez_agent(
     agent = create_react_agent(
         model=model_supervisor,
         tools=tools,
-        state_modifier=state_mod
+        prompt=state_mod
     )
 
     # return agent instead of tool

@@ -71,7 +71,7 @@ def create_bigquery_agent(model_name: Optional[str]=None) -> Callable:
     agent = create_react_agent(
         model=model,
         tools=tools,
-        state_modifier=state_mod
+        prompt=state_mod
     )
 
     @tool

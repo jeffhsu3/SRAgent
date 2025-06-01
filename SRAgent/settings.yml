@@ -3,6 +3,7 @@ default:
   db_port: 5432
   db_user: "postgres"
   db_timeout: 30
+  service_tier: "flex"
 
 test:
   db_name: "sragent-test"
@@ -63,6 +64,25 @@ test:
     entrez_convert: "low"
     find_datasets: "low"
     step_summary: ""
+  service_tier:
+    default: "flex"
+    esearch: "default"
+    esummary: "default"
+    elink: "default"
+    efetch: "default"
+    sequences: "default"
+    ncbi_fetch: "flex"
+    bigquery: "flex"
+    entrez: "flex"
+    sragent: "flex"
+    tissue_ontology: "flex"
+    metadata: "default"
+    metadata_router: "flex"
+    convert_router: "default"
+    accessions: "default"
+    entrez_convert: "default"
+    find_datasets: "default"
+    step_summary: "default"
     
 prod:
   db_name: "sragent-prod"
@@ -123,6 +143,25 @@ prod:
     entrez_convert: "low"
     find_datasets: "low"
     step_summary: ""
+  service_tier:
+    default: "flex"
+    esearch: "default"
+    esummary: "default"
+    elink: "default"
+    efetch: "default"
+    sequences: "default"
+    ncbi_fetch: "flex"
+    bigquery: "flex"
+    entrez: "flex"
+    sragent: "flex"
+    tissue_ontology: "flex"
+    metadata: "default"
+    metadata_router: "flex"
+    convert_router: "default"
+    accessions: "default"
+    entrez_convert: "default"
+    find_datasets: "default"
+    step_summary: "default"
   
 claude:
   db_name: "sragent-test"
@@ -148,3 +187,5 @@ claude:
     entrez_convert: "medium"
     find_datasets: "medium"
     step_summary: ""
+  service_tier:
+    default: "default"

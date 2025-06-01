@@ -57,18 +57,22 @@ class TestSetModel:
         mock_settings = {
             "models": {"default": "o4-mini"},
             "temperature": {"default": 0.1},
-            "reasoning_effort": {"default": "low"}
+            "reasoning_effort": {"default": "low"},
+            "service_tier": {},  # Empty dict so KeyError is raised
+            "flex_timeout": {}   # Empty dict so KeyError is raised
         }
         mock_load_settings.return_value = mock_settings
         
         # Test with o1/o3/o4 model
-        with patch("SRAgent.agents.utils.ChatOpenAI") as mock_chat:
+        with patch("SRAgent.agents.utils.FlexTierChatOpenAI") as mock_chat:
             model = set_model()
             mock_chat.assert_called_once_with(
                 model_name="o4-mini", 
                 temperature=None, 
                 reasoning_effort="low",
-                max_tokens=None  # Add expected max_tokens
+                max_tokens=None,
+                service_tier="default",  # Updated to match actual behavior
+                timeout=None
             )
     
     @patch("SRAgent.agents.utils.load_settings")
@@ -78,18 +82,22 @@ class TestSetModel:
         mock_settings = {
             "models": {"default": "gpt-4.1-mini"},
             "temperature": {"default": 0.1},
-            "reasoning_effort": {"default": "low"}
+            "reasoning_effort": {"default": "low"},
+            "service_tier": {},  # Empty dict so KeyError is raised
+            "flex_timeout": {}   # Empty dict so KeyError is raised
         }
         mock_load_settings.return_value = mock_settings
         
         # Test with GPT-4.1-mini model
-        with patch("SRAgent.agents.utils.ChatOpenAI") as mock_chat:
+        with patch("SRAgent.agents.utils.FlexTierChatOpenAI") as mock_chat:
             model = set_model()
             mock_chat.assert_called_once_with(
                 model_name="gpt-4.1-mini", 
                 temperature=0.1, 
                 reasoning_effort=None,
-                max_tokens=None  # Add expected max_tokens
+                max_tokens=None,
+                service_tier="default",  # Updated to match actual behavior
+                timeout=None
             )
     
     @patch("SRAgent.agents.utils.load_settings")
@@ -99,12 +107,14 @@ class TestSetModel:
         mock_settings = {
             "models": {"default": "o4-mini"},
             "temperature": {"default": 0.1},
-            "reasoning_effort": {"default": "low"}
+            "reasoning_effort": {"default": "low"},
+            "service_tier": {},  # Empty dict so KeyError is raised
+            "flex_timeout": {}   # Empty dict so KeyError is raised
         }
         mock_load_settings.return_value = mock_settings
         
         # Test with override parameters
-        with patch("SRAgent.agents.utils.ChatOpenAI") as mock_chat:
+        with patch("SRAgent.agents.utils.FlexTierChatOpenAI") as mock_chat:
             model = set_model(
                 model_name="gpt-4.1-mini",
                 temperature=0.5,
@@ -114,7 +124,9 @@ class TestSetModel:
                 model_name="gpt-4.1-mini", 
                 temperature=0.5, 
                 reasoning_effort=None,
-                max_tokens=None  # Add expected max_tokens
+                max_tokens=None,
+                service_tier="default",  # Updated to match actual behavior
+                timeout=None
             )
     
     @patch("SRAgent.agents.utils.load_settings")
@@ -124,18 +136,22 @@ class TestSetModel:
         mock_settings = {
             "models": {"default": "o4-mini", "entrez": "o4-mini"},
             "temperature": {"default": 0.1, "entrez": 0.2},
-            "reasoning_effort": {"default": "low", "entrez": "medium"}
+            "reasoning_effort": {"default": "low", "entrez": "medium"},
+            "service_tier": {},  # Empty dict so KeyError is raised
+            "flex_timeout": {}   # Empty dict so KeyError is raised
         }
         mock_load_settings.return_value = mock_settings
         
         # Test with agent_name parameter
-        with patch("SRAgent.agents.utils.ChatOpenAI") as mock_chat:
+        with patch("SRAgent.agents.utils.FlexTierChatOpenAI") as mock_chat:
             model = set_model(agent_name="entrez")
             mock_chat.assert_called_once_with(
                 model_name="o4-mini", 
                 temperature=None, 
                 reasoning_effort="medium",
-                max_tokens=None  # Add expected max_tokens
+                max_tokens=None,
+                service_tier="default",  # Updated to match actual behavior
+                timeout=None
             )
     
     @patch("SRAgent.agents.utils.load_settings")
@@ -218,7 +234,9 @@ class TestCreateStepSummaryChain:
             "models": {"default": "gpt-4.1-mini", "step_summary": "gpt-4.1-mini"},
             "temperature": {"default": 0.1, "step_summary": 0},
             "reasoning_effort": {"default": "low", "step_summary": None},
-            "max_tokens": {"default": None, "step_summary": 45}
+            "max_tokens": {"default": None, "step_summary": 45},
+            "service_tier": {},  # Empty dict so KeyError is raised
+            "flex_timeout": {}   # Empty dict so KeyError is raised
         }
         # Use a helper to mock dictionary access
         def mock_getitem(key):
@@ -231,14 +249,16 @@ class TestCreateStepSummaryChain:
         mock_settings.get.side_effect = lambda k, d=None: mock_settings_data.get(k, d) # Mock .get() too
 
         with patch("SRAgent.agents.utils.load_settings", return_value=mock_settings):
-             with patch("SRAgent.agents.utils.ChatOpenAI") as mock_chat:
+             with patch("SRAgent.agents.utils.FlexTierChatOpenAI") as mock_chat:
                 chain = create_step_summary_chain()
-                # Check that ChatOpenAI was created with expected parameters
+                # Check that FlexTierChatOpenAI was created with expected parameters
                 mock_chat.assert_called_once_with(
                     model_name="gpt-4.1-mini",
                     temperature=0,
+                    reasoning_effort=None,
                     max_tokens=45,
-                    reasoning_effort=None # Add missing reasoning_effort
+                    service_tier="default",  # Updated to match actual behavior
+                    timeout=None
                 )
 
                 # Check the structure of the returned chain
@@ -251,7 +271,9 @@ class TestCreateStepSummaryChain:
             "models": {"default": "gpt-4.1-mini", "step_summary": "gpt-4.1-mini"},
             "temperature": {"default": 0.1, "step_summary": 0},
             "reasoning_effort": {"default": "low", "step_summary": None},
-            "max_tokens": {"default": None, "step_summary": 100} # Will be overridden by argument
+            "max_tokens": {"default": None, "step_summary": 100}, # Will be overridden by argument
+            "service_tier": {},  # Empty dict so KeyError is raised
+            "flex_timeout": {}   # Empty dict so KeyError is raised
         }
         def mock_getitem(key):
             if key in mock_settings_data:
@@ -263,15 +285,17 @@ class TestCreateStepSummaryChain:
         mock_settings.get.side_effect = lambda k, d=None: mock_settings_data.get(k, d)
 
         with patch("SRAgent.agents.utils.load_settings", return_value=mock_settings):
-             with patch("SRAgent.agents.utils.ChatOpenAI") as mock_chat:
+             with patch("SRAgent.agents.utils.FlexTierChatOpenAI") as mock_chat:
                 # Pass the custom max_tokens argument
                 chain = create_step_summary_chain(max_tokens=100)
-                # Check that ChatOpenAI was created with the custom max_tokens
+                # Check that FlexTierChatOpenAI was created with the custom max_tokens
                 mock_chat.assert_called_once_with(
                     model_name="gpt-4.1-mini",
                     temperature=0,
+                    reasoning_effort=None,
                     max_tokens=100,
-                    reasoning_effort=None # Add missing reasoning_effort
+                    service_tier="default",  # Updated to match actual behavior
+                    timeout=None
                 )
 
                 # Check the structure of the returned chain

@@ -20,7 +20,7 @@ def create_ncbi_fetch_agent(model_name: str = None) -> Callable:
     agent = create_react_agent(
         model=model,
         tools=[fetch_geo_record, fetch_ncbi_record, fetch_pubmed_record, fetch_biosample_record, fetch_bioproject_record],
-        state_modifier="\n".join([
+        prompt="\n".join([
             "# Instructions"
             " - You are an expert in bioinformatics and you are working on a project to find information about a specific dataset.",
             " - You will use tools that directly request data from the NCBI website.",

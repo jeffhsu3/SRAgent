@@ -368,7 +368,8 @@ By default, most SRAgent sub-commands (e.g., `entrez` and `sragent`) use "fancy"
 Example:
 
 ```bash
-SRAgent --no-summaries --no-progress entrez "Convert GSE121737 to SRX accessions"
+SRAgent --no-summaries --no-progress \
+  entrez "Convert GSE121737 to SRX accessions"
 ```
 
 # Configuring models

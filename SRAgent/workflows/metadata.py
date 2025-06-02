@@ -1,6 +1,7 @@
 # import 
 import os
 import re
+import sys
 import asyncio
 import operator
 from enum import Enum
@@ -237,9 +238,35 @@ def create_get_metadata_node() -> Callable:
             MessagesPlaceholder(variable_name="history"),
         ])
         prompt = prompt.format_messages(history=state["messages"]) 
-        # call the model
-        response = await model.with_structured_output(AllMetadataEnum, strict=True).ainvoke(prompt)
-        extracted_fields = get_extracted_fields(response)
+        # try to extract the metadata
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                # call the model
+                response = await model.with_structured_output(AllMetadataEnum, strict=True).ainvoke(prompt)
+                extracted_fields = get_extracted_fields(response)
+                break
+            except Exception as e:
+                if "OpenAIRefusalError" in str(type(e).__name__) and attempt < max_retries - 1:
+                    print(f"OpenAI refused to generate metadata (attempt {attempt + 1}), retrying...", file=sys.stderr)
+                    prompt.append(("system", "If you cannot determine certain fields with confidence, use 'unsure' or 'other' as appropriate."))
+                    continue
+                else:
+                    # For final attempt or other errors, use default values
+                    print(f"Error extracting metadata: {str(e)}", file=sys.stderr)
+                    extracted_fields = {
+                        "is_illumina": "unsure",
+                        "is_single_cell": "unsure",
+                        "is_paired_end": "unsure",
+                        "lib_prep": "other",
+                        "tech_10x": "not_applicable",
+                        "cell_prep": "unsure",
+                        "organism": "other",
+                        "tissue": "unknown",
+                        "disease": "unknown",
+                        "perturbation": "unknown",
+                        "cell_line": "unknown"
+                    }
         # check logic
         try:
             if extracted_fields["is_single_cell"] != "yes":

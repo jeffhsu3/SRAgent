@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # import
 import os
+import sys
 import asyncio
 import operator
 from typing import List, Dict, Any, Tuple, Annotated, TypedDict, Sequence, Callable
@@ -78,15 +79,30 @@ def create_get_entrez_ids_node() -> Callable:
             message,
             "#-- END OF MESSAGE --#"
         ])
+        
         # invoke model with structured output; try 3 times to get valid output
         entrez_ids = []
+        max_retries = 3
         database = ""
-        for i in range(3):
-            response = await model.with_structured_output(EntrezInfo, strict=True).ainvoke(prompt)
-            entrez_ids = response.entrez_ids
-            database = str(response.database).lower()
-            if database in ["sra", "gds"]:
-                break
+        for i in range(max_retries):
+            try:
+                response = await model.with_structured_output(EntrezInfo, strict=True).ainvoke(prompt)
+                entrez_ids = response.entrez_ids
+                database = str(response.database).lower()
+                if database in ["sra", "gds"]:
+                    break
+            except Exception as e:
+                if "OpenAIRefusalError" in str(type(e).__name__) and i < max_retries - 1:
+                    print(f"OpenAI refused to extract Entrez IDs (attempt {i + 1}), retrying...", file=sys.stderr)
+                    prompt += "\nIf no valid Entrez IDs or database are found, return empty values."
+                    continue
+                else:
+                    # For final attempt or other errors, use empty values
+                    print(f"Error extracting Entrez IDs: {str(e)}", file=sys.stderr)
+                    entrez_ids = []
+                    database = ""
+                    break
+                    
         ## if no valid database, return no entrez IDs
         if database not in ["sra", "gds"]:
             return {"entrez_ids": [], "database": ""}

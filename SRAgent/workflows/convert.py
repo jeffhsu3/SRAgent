@@ -1,6 +1,7 @@
 # import 
 import os
 import re
+import sys
 import asyncio
 import operator
 from enum import Enum
@@ -83,9 +84,22 @@ def create_get_accessions_node() -> Callable:
             message,
             "#-- END OF MESSAGE --#"
         ])
-        ## invoke model with structured output
-        response = await model.with_structured_output(Acessions, strict=True).ainvoke(prompt)
-        return {"SRX" : response.srx}
+        # Try to extract accessions with retries on refusal
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                ## invoke model with structured output
+                response = await model.with_structured_output(Acessions, strict=True).ainvoke(prompt)
+                return {"SRX" : response.srx}
+            except Exception as e:
+                if "OpenAIRefusalError" in str(type(e).__name__) and attempt < max_retries - 1:
+                    print(f"OpenAI refused to extract accessions (attempt {attempt + 1}), retrying...", file=sys.stderr)
+                    prompt += "\nIf no valid SRX/ERX accessions are found, return an empty list."
+                    continue
+                else:
+                    # For final attempt or other errors, return empty list
+                    print(f"Error extracting accessions: {str(e)}", file=sys.stderr)
+                    return {"SRX" : []}
     return invoke_get_accessions_node
 
 ## router

@@ -10,6 +10,7 @@ from langchain_core.tools import tool
 from langgraph.prebuilt import create_react_agent
 from langchain_core.runnables.config import RunnableConfig
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
+from langchain_openai.chat_models.base import OpenAIRefusalError
 ## package
 from SRAgent.agents.utils import set_model
 from SRAgent.agents.tissue_ontology import create_tissue_ontology_agent
@@ -83,11 +84,17 @@ def create_tissue_ontology_workflow(
         The Tissue Ontology agent will annotate each tissue description with the most suitable Uberon term,
         or "No suitable ontology term found" if no term is found.
         """
-        # The React agent expects messages in this format
-        response = await agent.ainvoke({"messages" : messages}, config=config)
-        # filter out ids that do not start with "UBERON:"
-        ids = [x.id for x in response['structured_response'].ids if x.id.startswith("UBERON:")]
-        return ids
+        try:
+            # The React agent expects messages in this format
+            response = await agent.ainvoke({"messages" : messages}, config=config)
+            # filter out ids that do not start with "UBERON:"
+            ids = [x.id for x in response['structured_response'].ids if x.id.startswith("UBERON:")]
+            return ids
+        except OpenAIRefusalError as e:
+            # Handle cases where the model refuses to generate a response
+            # This typically happens when tissue description is too vague (e.g., just "tumor")
+            print(f"OpenAI refused to generate tissue ontology: {str(e)}", file=sys.stderr)
+            return []
     
     return invoke_tissue_ontology_workflow
 

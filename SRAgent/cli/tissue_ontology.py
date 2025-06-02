@@ -6,7 +6,7 @@ from Bio import Entrez
 from langchain_core.messages import HumanMessage
 from SRAgent.cli.utils import CustomFormatter
 from SRAgent.workflows.tissue_ontology import create_tissue_ontology_workflow
-from SRAgent.agents.utils import create_agent_stream, display_final_results
+from SRAgent.agents.display import create_agent_stream, display_final_results
 
 # functions
 def tissue_ontology_parser(subparsers):

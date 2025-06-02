@@ -10,7 +10,7 @@ from Bio import Entrez
 ## package
 from SRAgent.cli.utils import CustomFormatter
 from SRAgent.workflows.srx_info import create_SRX_info_graph
-from SRAgent.agents.utils import create_step_summary_chain
+from SRAgent.agents.display import create_step_summary_chain
 from SRAgent.db.connect import db_connect 
 from SRAgent.db.get import db_get_srx_records
 

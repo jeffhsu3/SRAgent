@@ -16,7 +16,6 @@ from SRAgent.agents.entrez import create_entrez_agent
 from SRAgent.agents.ncbi_fetch import create_ncbi_fetch_agent
 from SRAgent.agents.bigquery import create_bigquery_agent
 from SRAgent.agents.sequences import create_sequences_agent
-from SRAgent.agents.utils import create_step_summary_chain
 
 # functions
 def create_sragent_agent(

@@ -6,7 +6,7 @@ from Bio import Entrez
 from langchain_core.messages import HumanMessage
 from SRAgent.cli.utils import CustomFormatter
 from SRAgent.agents.sragent import create_sragent_agent
-from SRAgent.agents.utils import create_agent_stream, display_final_results
+from SRAgent.agents.display import create_agent_stream, display_final_results
 
 # functions
 def sragent_parser(subparsers):

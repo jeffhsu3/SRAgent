@@ -12,7 +12,7 @@ from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 ## package
 from SRAgent.cli.utils import CustomFormatter
 from SRAgent.workflows.find_datasets import create_find_datasets_graph
-from SRAgent.agents.utils import create_step_summary_chain
+from SRAgent.agents.display import create_step_summary_chain
 from SRAgent.tools.utils import set_entrez_access
 from SRAgent.organisms import OrganismEnum
 

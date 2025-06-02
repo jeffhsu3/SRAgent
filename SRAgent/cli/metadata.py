@@ -12,7 +12,7 @@ from langchain_core.messages import HumanMessage
 ## package
 from SRAgent.cli.utils import CustomFormatter
 from SRAgent.workflows.metadata import get_metadata_items, create_metadata_graph
-from SRAgent.agents.utils import create_step_summary_chain
+from SRAgent.agents.display import create_step_summary_chain
 
 # functions
 def metadata_agent_parser(subparsers):

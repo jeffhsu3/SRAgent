@@ -1,11 +1,14 @@
 import os
 import re
 import sys
+import asyncio
+from functools import wraps
 from importlib import resources
 from typing import Dict, Any, Optional
 from langchain_openai import ChatOpenAI
 from langchain_anthropic import ChatAnthropic
 from dynaconf import Dynaconf
+import openai
 
 def load_settings() -> Dict[str, Any]:
     """
@@ -30,6 +33,119 @@ def load_settings() -> Dict[str, Any]:
         env_switcher="DYNACONF"
     )
     return settings
+
+def async_retry_on_flex_timeout(func):
+    """
+    Async decorator to retry with default tier if flex tier times out.
+    """
+    @wraps(func)
+    async def wrapper(self, *args, **kwargs):
+        # Check if we're using flex tier
+        service_tier = getattr(self, '_service_tier', None)
+        model_name = getattr(self, 'model_name', None)
+        
+        if service_tier != "flex":
+            # Not using flex tier, just call the function normally
+            return await func(self, *args, **kwargs)
+        
+        try:
+            # Try with flex tier first
+            return await func(self, *args, **kwargs)
+        except (asyncio.TimeoutError, openai.APITimeoutError) as e:
+            print(f"Flex tier timeout for model {model_name}, retrying with standard tier...", file=sys.stderr)
+            
+            # Create a new instance with default tier
+            if hasattr(self, '_fallback_model'):
+                # Use pre-created fallback model if available
+                fallback_model = self._fallback_model
+            else:
+                # Create fallback model on the fly
+                fallback_kwargs = {
+                    "model_name": self.model_name,
+                    "temperature": getattr(self, 'temperature', None),
+                    "max_tokens": getattr(self, 'max_tokens', None),
+                }
+                # Add reasoning_effort if it's an o-model
+                if hasattr(self, 'reasoning_effort'):
+                    fallback_kwargs["reasoning_effort"] = self.reasoning_effort
+                    fallback_kwargs["temperature"] = None
+                fallback_model = ChatOpenAI(**fallback_kwargs)
+            
+            # Retry with default tier
+            return await fallback_model.ainvoke(*args, **kwargs)
+        except Exception as e:
+            # For other exceptions, just raise them
+            raise
+    
+    return wrapper
+
+def sync_retry_on_flex_timeout(func):
+    """
+    Sync decorator to retry with default tier if flex tier times out.
+    """
+    @wraps(func)
+    def wrapper(self, *args, **kwargs):
+        # Check if we're using flex tier
+        service_tier = getattr(self, '_service_tier', None)
+        model_name = getattr(self, 'model_name', None)
+        
+        if service_tier != "flex":
+            # Not using flex tier, just call the function normally
+            return func(self, *args, **kwargs)
+        
+        try:
+            # Try with flex tier first
+            return func(self, *args, **kwargs)
+        except (openai.APITimeoutError,) as e:
+            print(f"Flex tier timeout for model {model_name}, retrying with standard tier...", file=sys.stderr)
+            
+            # Create a new instance with default tier
+            if hasattr(self, '_fallback_model'):
+                # Use pre-created fallback model if available
+                fallback_model = self._fallback_model
+            else:
+                # Create fallback model on the fly
+                fallback_kwargs = {
+                    "model_name": self.model_name,
+                    "temperature": getattr(self, 'temperature', None),
+                    "max_tokens": getattr(self, 'max_tokens', None),
+                }
+                # Add reasoning_effort if it's an o-model
+                if hasattr(self, 'reasoning_effort'):
+                    fallback_kwargs["reasoning_effort"] = self.reasoning_effort
+                    fallback_kwargs["temperature"] = None
+                fallback_model = ChatOpenAI(**fallback_kwargs)
+            
+            # Retry with default tier
+            return fallback_model.invoke(*args, **kwargs)
+        except Exception as e:
+            # For other exceptions, just raise them
+            raise
+    
+    return wrapper
+
+class FlexTierChatOpenAI(ChatOpenAI):
+    """
+    Extended ChatOpenAI that supports automatic fallback from flex to default tier.
+    """
+    def __init__(self, *args, service_tier: Optional[str] = None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._service_tier = service_tier
+        
+        # Create fallback model if using flex tier
+        if service_tier == "flex":
+            fallback_kwargs = kwargs.copy()
+            fallback_kwargs.pop('service_tier', None)
+            fallback_kwargs.pop('timeout', None)
+            self._fallback_model = ChatOpenAI(**fallback_kwargs)
+    
+    @async_retry_on_flex_timeout
+    async def ainvoke(self, *args, **kwargs):
+        return await super().ainvoke(*args, **kwargs)
+    
+    @sync_retry_on_flex_timeout
+    def invoke(self, *args, **kwargs):
+        return super().invoke(*args, **kwargs)
 
 def set_model(
     model_name: Optional[str] = None,
@@ -84,11 +200,27 @@ def set_model(
     if service_tier is None:
         try:
             service_tier = settings["service_tier"][agent_name]
-        except KeyError:
+        except (KeyError, TypeError):
             try:
                 service_tier = settings["service_tier"]["default"]
-            except KeyError:
-                service_tier = "default"  # fallback to default service tier
+            except (KeyError, TypeError):
+                try:
+                    service_tier = settings["service_tier"]
+                except (KeyError, TypeError):
+                    service_tier = "default"  # fallback to default service tier
+
+    # Get timeout from settings (optional)
+    timeout = None
+    try:
+        timeout = settings["flex_timeout"][agent_name]
+    except (KeyError, TypeError):
+        try:
+            timeout = settings["flex_timeout"]["default"]
+        except (KeyError, TypeError):
+            try:
+                timeout = settings["flex_timeout"]
+            except (KeyError, TypeError):
+                timeout = 180.0  # Default value
 
     # Validate service_tier for OpenAI models
     if service_tier == "flex" and not re.search(r"^o[0-9]", model_name):
@@ -117,10 +249,26 @@ def set_model(
         model = ChatAnthropic(model=model_name, temperature=temperature, thinking=thinking, max_tokens=max_tokens)
     elif model_name.startswith("gpt-4"):
         # GPT-4o models use temperature but not reasoning_effort
-        model = ChatOpenAI(model_name=model_name, temperature=temperature, reasoning_effort=None, max_tokens=max_tokens, service_tier=service_tier)
+        # Use FlexTierChatOpenAI for automatic fallback support
+        model = FlexTierChatOpenAI(
+            model_name=model_name, 
+            temperature=temperature, 
+            reasoning_effort=None, 
+            max_tokens=max_tokens, 
+            service_tier=service_tier,
+            timeout=timeout if service_tier == "flex" else None
+        )
     elif re.search(r"^o[0-9]", model_name):
         # o[0-9] models use reasoning_effort but not temperature
-        model = ChatOpenAI(model_name=model_name, temperature=None, reasoning_effort=reasoning_effort, max_tokens=max_tokens, service_tier=service_tier)
+        # Use FlexTierChatOpenAI for automatic fallback support
+        model = FlexTierChatOpenAI(
+            model_name=model_name, 
+            temperature=None, 
+            reasoning_effort=reasoning_effort, 
+            max_tokens=max_tokens, 
+            service_tier=service_tier,
+            timeout=timeout if service_tier == "flex" else None
+        )
     else:
         raise ValueError(f"Model {model_name} not supported")
 
@@ -137,7 +285,5 @@ if __name__ == "__main__":
     print(settings)
 
     # set model
-    model = set_model(model_name="claude-3-7-sonnet-20250219", agent_name="default")
+    model = set_model(model_name="claude-sonnet-4-latest", agent_name="default")
     print(model)
-
-

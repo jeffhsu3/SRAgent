@@ -92,7 +92,7 @@ gcloud run jobs update ${JOB_NAME} \
   --cpu=2 \
   --memory=2Gi \
   --max-retries=0 \
-  --args="find-datasets","--organisms","human-mouse","--use-database","--tenant","${SQL_DB_TENANT}","--no-summaries","Obtain recent single cell RNA-seq datasets in the SRA database"
+  --args="--no-summaries","find-datasets","--organisms","human-mouse","--use-database","--tenant","${SQL_DB_TENANT}","Obtain recent single cell RNA-seq datasets in the SRA database"
 ```
 
 ## non-human/mouse organisms
@@ -125,5 +125,5 @@ gcloud run jobs update ${JOB_NAME} \
   --cpu=2 \
   --memory=2Gi \
   --max-retries=0 \
-  --args="find-datasets","--organisms","other-orgs","--use-database","--tenant","${SQL_DB_TENANT}","--no-summaries","Obtain recent single cell RNA-seq datasets in the SRA database"
+  --args="--no-summaries","find-datasets","--organisms","other-orgs","--use-database","--tenant","${SQL_DB_TENANT}","Obtain recent single cell RNA-seq datasets in the SRA database"
 ```

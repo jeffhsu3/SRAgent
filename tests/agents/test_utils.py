@@ -51,66 +51,86 @@ class TestSetModel:
     @patch("SRAgent.agents.utils.load_settings")
     def test_set_model_default_settings(self, mock_load_settings):
         """Test set_model with default settings"""
-        # Mock settings
-        mock_settings = {
-            "models": {"default": "o4-mini"},
-            "temperature": {"default": 0.1},
-            "reasoning_effort": {"default": "low"},
-            "service_tier": {},  # Empty dict so KeyError is raised
-            "flex_timeout": {}   # Empty dict so KeyError is raised
-        }
+        # Create mock settings that handles KeyError for service_tier and flex_timeout properly
+        def settings_getitem(key):
+            available_settings = {
+                "models": {"default": "o4-mini"},
+                "temperature": {"default": 0.1},
+                "reasoning_effort": {"default": "low"},
+            }
+            if key in available_settings:
+                return available_settings[key]
+            else:
+                raise KeyError(key)
+        
+        mock_settings = MagicMock()
+        mock_settings.__getitem__.side_effect = settings_getitem
         mock_load_settings.return_value = mock_settings
         
         # Test with o1/o3/o4 model
-        with patch("SRAgent.agents.utils.ChatOpenAI") as mock_chat:
+        with patch("SRAgent.agents.utils.FlexTierChatOpenAI") as mock_chat:
             model = set_model()
             mock_chat.assert_called_once_with(
                 model_name="o4-mini", 
                 temperature=None, 
                 reasoning_effort="low",
                 max_tokens=None,
-                service_tier="default"
+                service_tier="default",
+                timeout=None
             )
     
     @patch("SRAgent.agents.utils.load_settings")
     def test_set_model_with_gpt4o(self, mock_load_settings):
         """Test set_model with gpt-4o model"""
-        # Mock settings
-        mock_settings = {
-            "models": {"default": "gpt-4.1-mini"},
-            "temperature": {"default": 0.1},
-            "reasoning_effort": {"default": "low"},
-            "service_tier": {},  # Empty dict so KeyError is raised
-            "flex_timeout": {}   # Empty dict so KeyError is raised
-        }
+        # Create mock settings that handles KeyError for service_tier and flex_timeout properly
+        def settings_getitem(key):
+            available_settings = {
+                "models": {"default": "gpt-4.1-mini"},
+                "temperature": {"default": 0.1},
+                "reasoning_effort": {"default": "low"},
+            }
+            if key in available_settings:
+                return available_settings[key]
+            else:
+                raise KeyError(key)
+        
+        mock_settings = MagicMock()
+        mock_settings.__getitem__.side_effect = settings_getitem
         mock_load_settings.return_value = mock_settings
         
         # Test with GPT-4.1-mini model
-        with patch("SRAgent.agents.utils.ChatOpenAI") as mock_chat:
+        with patch("SRAgent.agents.utils.FlexTierChatOpenAI") as mock_chat:
             model = set_model()
             mock_chat.assert_called_once_with(
                 model_name="gpt-4.1-mini", 
                 temperature=0.1, 
                 reasoning_effort=None,
                 max_tokens=None,
-                service_tier="default"
+                service_tier="default",
+                timeout=None
             )
     
     @patch("SRAgent.agents.utils.load_settings")
     def test_set_model_with_overrides(self, mock_load_settings):
         """Test set_model with parameter overrides"""
-        # Mock settings
-        mock_settings = {
-            "models": {"default": "o4-mini"},
-            "temperature": {"default": 0.1},
-            "reasoning_effort": {"default": "low"},
-            "service_tier": {},  # Empty dict so KeyError is raised
-            "flex_timeout": {}   # Empty dict so KeyError is raised
-        }
+        # Create mock settings that handles KeyError for service_tier and flex_timeout properly
+        def settings_getitem(key):
+            available_settings = {
+                "models": {"default": "o4-mini"},
+                "temperature": {"default": 0.1},
+                "reasoning_effort": {"default": "low"},
+            }
+            if key in available_settings:
+                return available_settings[key]
+            else:
+                raise KeyError(key)
+        
+        mock_settings = MagicMock()
+        mock_settings.__getitem__.side_effect = settings_getitem
         mock_load_settings.return_value = mock_settings
         
         # Test with override parameters
-        with patch("SRAgent.agents.utils.ChatOpenAI") as mock_chat:
+        with patch("SRAgent.agents.utils.FlexTierChatOpenAI") as mock_chat:
             model = set_model(
                 model_name="gpt-4.1-mini",
                 temperature=0.5,
@@ -121,31 +141,39 @@ class TestSetModel:
                 temperature=0.5, 
                 reasoning_effort=None,
                 max_tokens=None,
-                service_tier="default"
+                service_tier="default",
+                timeout=None
             )
     
     @patch("SRAgent.agents.utils.load_settings")
     def test_set_model_specific_agent(self, mock_load_settings):
         """Test set_model with specific agent settings"""
-        # Mock settings with agent-specific settings
-        mock_settings = {
-            "models": {"default": "o4-mini", "entrez": "o4-mini"},
-            "temperature": {"default": 0.1, "entrez": 0.2},
-            "reasoning_effort": {"default": "low", "entrez": "medium"},
-            "service_tier": {},  # Empty dict so KeyError is raised
-            "flex_timeout": {}   # Empty dict so KeyError is raised
-        }
+        # Create mock settings that handles KeyError for service_tier and flex_timeout properly
+        def settings_getitem(key):
+            available_settings = {
+                "models": {"default": "o4-mini", "entrez": "o4-mini"},
+                "temperature": {"default": 0.1, "entrez": 0.2},
+                "reasoning_effort": {"default": "low", "entrez": "medium"},
+            }
+            if key in available_settings:
+                return available_settings[key]
+            else:
+                raise KeyError(key)
+        
+        mock_settings = MagicMock()
+        mock_settings.__getitem__.side_effect = settings_getitem
         mock_load_settings.return_value = mock_settings
         
         # Test with agent_name parameter
-        with patch("SRAgent.agents.utils.ChatOpenAI") as mock_chat:
+        with patch("SRAgent.agents.utils.FlexTierChatOpenAI") as mock_chat:
             model = set_model(agent_name="entrez")
             mock_chat.assert_called_once_with(
                 model_name="o4-mini", 
                 temperature=None, 
                 reasoning_effort="medium",
                 max_tokens=None,
-                service_tier="default"
+                service_tier="default",
+                timeout=None
             )
     
     @patch("SRAgent.agents.utils.load_settings")
@@ -168,7 +196,7 @@ class TestSetModel:
         """Test set_model with claude model"""
         # Mock settings
         mock_settings = {
-            "models": {"default": "claude-3-7-sonnet-20250219"},
+            "models": {"default": "claude-sonnet-4-0"},
             "temperature": {"default": 0.1},
             "reasoning_effort": {"default": "low"}
         }
@@ -178,7 +206,7 @@ class TestSetModel:
         with patch("SRAgent.agents.utils.ChatAnthropic") as mock_chat:
             model = set_model()
             mock_chat.assert_called_once_with(
-                model="claude-3-7-sonnet-20250219", 
+                model="claude-sonnet-4-0", 
                 temperature=None, 
                 thinking={"type": "enabled", "budget_tokens": 1024},
                 max_tokens=2048
@@ -189,7 +217,7 @@ class TestSetModel:
         with patch("SRAgent.agents.utils.ChatAnthropic") as mock_chat:
             model = set_model()
             mock_chat.assert_called_once_with(
-                model="claude-3-7-sonnet-20250219",
+                model="claude-sonnet-4-0",
                 temperature=None,
                 thinking={"type": "enabled", "budget_tokens": 2048},
                 max_tokens=3072
@@ -200,7 +228,7 @@ class TestSetModel:
         with patch("SRAgent.agents.utils.ChatAnthropic") as mock_chat:
             model = set_model()
             mock_chat.assert_called_once_with(
-                model="claude-3-7-sonnet-20250219",
+                model="claude-sonnet-4-0",
                 temperature=None,
                 thinking={"type": "enabled", "budget_tokens": 4096},
                 max_tokens=5120
@@ -211,8 +239,8 @@ class TestSetModel:
         with patch("SRAgent.agents.utils.ChatAnthropic") as mock_chat:
             model = set_model()
             mock_chat.assert_called_once_with(
-                model="claude-3-7-sonnet-20250219",
+                model="claude-sonnet-4-0",
                 temperature=0.1,
                 thinking={"type": "disabled"},
-                max_tokens=None
+                max_tokens=1024
             )

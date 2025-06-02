@@ -17,35 +17,32 @@ class TestCreateStepSummaryChain:
     
     def test_create_step_summary_chain_output(self):
         """Test that create_step_summary_chain returns the expected object"""
-        # Mock load_settings to provide necessary config for step_summary agent
-        mock_settings_data = {
-            "models": {"default": "gpt-4.1-mini", "step_summary": "gpt-4.1-mini"},
-            "temperature": {"default": 0.1, "step_summary": 0},
-            "reasoning_effort": {"default": "low", "step_summary": None},
-            "max_tokens": {"default": None, "step_summary": 45},
-            "service_tier": {},  # Empty dict so KeyError is raised
-            "flex_timeout": {}   # Empty dict so KeyError is raised
-        }
-        # Use a helper to mock dictionary access
-        def mock_getitem(key):
-            if key in mock_settings_data:
-                return mock_settings_data[key]
-            raise KeyError(f"{key} does not exist")
-
+        # Create mock settings that handles KeyError for service_tier and flex_timeout properly
+        def settings_getitem(key):
+            available_settings = {
+                "models": {"default": "gpt-4.1-mini", "step_summary": "gpt-4.1-mini"},
+                "temperature": {"default": 0.1, "step_summary": 0},
+                "reasoning_effort": {"default": "low", "step_summary": None},
+            }
+            if key in available_settings:
+                return available_settings[key]
+            else:
+                raise KeyError(key)
+        
         mock_settings = MagicMock()
-        mock_settings.__getitem__.side_effect = mock_getitem
-        mock_settings.get.side_effect = lambda k, d=None: mock_settings_data.get(k, d) # Mock .get() too
-
+        mock_settings.__getitem__.side_effect = settings_getitem
+        
         with patch("SRAgent.agents.utils.load_settings", return_value=mock_settings):
-             with patch("SRAgent.agents.utils.ChatOpenAI") as mock_chat:
+             with patch("SRAgent.agents.utils.FlexTierChatOpenAI") as mock_chat:
                 chain = create_step_summary_chain()
-                # Check that ChatOpenAI was created with expected parameters
+                # Check that FlexTierChatOpenAI was created with expected parameters
                 mock_chat.assert_called_once_with(
                     model_name="gpt-4.1-mini",
                     temperature=0,
                     reasoning_effort=None,
                     max_tokens=45,
-                    service_tier="default"
+                    service_tier="default",
+                    timeout=None
                 )
 
                 # Check the structure of the returned chain
@@ -53,35 +50,33 @@ class TestCreateStepSummaryChain:
     
     def test_create_step_summary_chain_with_custom_params(self):
         """Test create_step_summary_chain with custom parameters"""
-        # Mock load_settings similar to the previous test
-        mock_settings_data = {
-            "models": {"default": "gpt-4.1-mini", "step_summary": "gpt-4.1-mini"},
-            "temperature": {"default": 0.1, "step_summary": 0},
-            "reasoning_effort": {"default": "low", "step_summary": None},
-            "max_tokens": {"default": None, "step_summary": 100}, # Will be overridden by argument
-            "service_tier": {},  # Empty dict so KeyError is raised
-            "flex_timeout": {}   # Empty dict so KeyError is raised
-        }
-        def mock_getitem(key):
-            if key in mock_settings_data:
-                return mock_settings_data[key]
-            raise KeyError(f"{key} does not exist")
-
+        # Create mock settings that handles KeyError for service_tier and flex_timeout properly
+        def settings_getitem(key):
+            available_settings = {
+                "models": {"default": "gpt-4.1-mini", "step_summary": "gpt-4.1-mini"},
+                "temperature": {"default": 0.1, "step_summary": 0},
+                "reasoning_effort": {"default": "low", "step_summary": None},
+            }
+            if key in available_settings:
+                return available_settings[key]
+            else:
+                raise KeyError(key)
+        
         mock_settings = MagicMock()
-        mock_settings.__getitem__.side_effect = mock_getitem
-        mock_settings.get.side_effect = lambda k, d=None: mock_settings_data.get(k, d)
+        mock_settings.__getitem__.side_effect = settings_getitem
 
         with patch("SRAgent.agents.utils.load_settings", return_value=mock_settings):
-             with patch("SRAgent.agents.utils.ChatOpenAI") as mock_chat:
+             with patch("SRAgent.agents.utils.FlexTierChatOpenAI") as mock_chat:
                 # Pass the custom max_tokens argument
                 chain = create_step_summary_chain(max_tokens=100)
-                # Check that ChatOpenAI was created with the custom max_tokens
+                # Check that FlexTierChatOpenAI was created with the custom max_tokens
                 mock_chat.assert_called_once_with(
                     model_name="gpt-4.1-mini",
                     temperature=0,
                     reasoning_effort=None,
                     max_tokens=100,
-                    service_tier="default"
+                    service_tier="default",
+                    timeout=None
                 )
 
                 # Check the structure of the returned chain

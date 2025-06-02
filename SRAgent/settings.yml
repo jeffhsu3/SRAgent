@@ -175,7 +175,7 @@ prod:
 claude:
   db_name: "sragent-test"
   models:
-    default: "claude-sonnet-4-latest"
+    default: "claude-sonnet-4-0"
   temperature:
     default: 0.1
   reasoning_effort:
@@ -188,7 +188,7 @@ claude:
     bigquery: "medium"
     entrez: "medium"
     sragent: "medium"
-    tissue_ontology: "medium"
+    tissue_ontology: ""
     metadata: "high"
     convert_router: "low"
     metadata_router: "medium"

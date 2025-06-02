@@ -246,6 +246,8 @@ def set_model(
             thinking = {"type": "disabled"}
             if temperature is None:
                 raise ValueError(f"Temperature is required for Claude models if reasoning_effort is not set")
+        if not max_tokens:
+            max_tokens = 1024
         model = ChatAnthropic(model=model_name, temperature=temperature, thinking=thinking, max_tokens=max_tokens)
     elif model_name.startswith("gpt-4"):
         # GPT-4o models use temperature but not reasoning_effort

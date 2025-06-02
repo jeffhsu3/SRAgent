@@ -64,15 +64,13 @@ class TestSetModel:
         mock_load_settings.return_value = mock_settings
         
         # Test with o1/o3/o4 model
-        with patch("SRAgent.agents.utils.FlexTierChatOpenAI") as mock_chat:
+        with patch("SRAgent.agents.utils.ChatOpenAI") as mock_chat:
             model = set_model()
             mock_chat.assert_called_once_with(
                 model_name="o4-mini", 
                 temperature=None, 
                 reasoning_effort="low",
-                max_tokens=None,
-                service_tier="default",  # Updated to match actual behavior
-                timeout=None
+                max_tokens=None
             )
     
     @patch("SRAgent.agents.utils.load_settings")
@@ -89,15 +87,13 @@ class TestSetModel:
         mock_load_settings.return_value = mock_settings
         
         # Test with GPT-4.1-mini model
-        with patch("SRAgent.agents.utils.FlexTierChatOpenAI") as mock_chat:
+        with patch("SRAgent.agents.utils.ChatOpenAI") as mock_chat:
             model = set_model()
             mock_chat.assert_called_once_with(
                 model_name="gpt-4.1-mini", 
                 temperature=0.1, 
                 reasoning_effort=None,
-                max_tokens=None,
-                service_tier="default",  # Updated to match actual behavior
-                timeout=None
+                max_tokens=None
             )
     
     @patch("SRAgent.agents.utils.load_settings")
@@ -114,7 +110,7 @@ class TestSetModel:
         mock_load_settings.return_value = mock_settings
         
         # Test with override parameters
-        with patch("SRAgent.agents.utils.FlexTierChatOpenAI") as mock_chat:
+        with patch("SRAgent.agents.utils.ChatOpenAI") as mock_chat:
             model = set_model(
                 model_name="gpt-4.1-mini",
                 temperature=0.5,
@@ -124,9 +120,7 @@ class TestSetModel:
                 model_name="gpt-4.1-mini", 
                 temperature=0.5, 
                 reasoning_effort=None,
-                max_tokens=None,
-                service_tier="default",  # Updated to match actual behavior
-                timeout=None
+                max_tokens=None
             )
     
     @patch("SRAgent.agents.utils.load_settings")
@@ -143,15 +137,13 @@ class TestSetModel:
         mock_load_settings.return_value = mock_settings
         
         # Test with agent_name parameter
-        with patch("SRAgent.agents.utils.FlexTierChatOpenAI") as mock_chat:
+        with patch("SRAgent.agents.utils.ChatOpenAI") as mock_chat:
             model = set_model(agent_name="entrez")
             mock_chat.assert_called_once_with(
                 model_name="o4-mini", 
                 temperature=None, 
                 reasoning_effort="medium",
-                max_tokens=None,
-                service_tier="default",  # Updated to match actual behavior
-                timeout=None
+                max_tokens=None
             )
     
     @patch("SRAgent.agents.utils.load_settings")
@@ -249,16 +241,14 @@ class TestCreateStepSummaryChain:
         mock_settings.get.side_effect = lambda k, d=None: mock_settings_data.get(k, d) # Mock .get() too
 
         with patch("SRAgent.agents.utils.load_settings", return_value=mock_settings):
-             with patch("SRAgent.agents.utils.FlexTierChatOpenAI") as mock_chat:
+             with patch("SRAgent.agents.utils.ChatOpenAI") as mock_chat:
                 chain = create_step_summary_chain()
-                # Check that FlexTierChatOpenAI was created with expected parameters
+                # Check that ChatOpenAI was created with expected parameters
                 mock_chat.assert_called_once_with(
                     model_name="gpt-4.1-mini",
                     temperature=0,
                     reasoning_effort=None,
-                    max_tokens=45,
-                    service_tier="default",  # Updated to match actual behavior
-                    timeout=None
+                    max_tokens=45
                 )
 
                 # Check the structure of the returned chain
@@ -285,17 +275,15 @@ class TestCreateStepSummaryChain:
         mock_settings.get.side_effect = lambda k, d=None: mock_settings_data.get(k, d)
 
         with patch("SRAgent.agents.utils.load_settings", return_value=mock_settings):
-             with patch("SRAgent.agents.utils.FlexTierChatOpenAI") as mock_chat:
+             with patch("SRAgent.agents.utils.ChatOpenAI") as mock_chat:
                 # Pass the custom max_tokens argument
                 chain = create_step_summary_chain(max_tokens=100)
-                # Check that FlexTierChatOpenAI was created with the custom max_tokens
+                # Check that ChatOpenAI was created with the custom max_tokens
                 mock_chat.assert_called_once_with(
                     model_name="gpt-4.1-mini",
                     temperature=0,
                     reasoning_effort=None,
-                    max_tokens=100,
-                    service_tier="default",  # Updated to match actual behavior
-                    timeout=None
+                    max_tokens=100
                 )
 
                 # Check the structure of the returned chain
@@ -323,9 +311,14 @@ class TestCreateAgentStream:
         # Mock create_agent_func
         mock_create_agent_func = MagicMock(return_value=mock_agent)
         
+        # Create proper input format that create_agent_stream expects
+        test_input = {
+            "messages": [MagicMock(content="Test query")]
+        }
+        
         # Call create_agent_stream
         with patch("sys.stderr"):  # Redirect stderr to avoid printing during test
-            result = await create_agent_stream("test input", mock_create_agent_func)
+            result = await create_agent_stream(test_input, mock_create_agent_func)
         
         # Assert results
         assert result == "Test message"
@@ -351,21 +344,26 @@ class TestCreateAgentStream:
         
         # Mock step summary chain
         mock_summary_chain = MagicMock()
-        mock_summary_chain.invoke.return_value = MagicMock(content="Summary")
+        mock_summary_chain.ainvoke = AsyncMock(return_value=MagicMock(content="Summary"))
+        
+        # Create proper input format
+        test_input = {
+            "messages": [MagicMock(content="Test query")]
+        }
         
         # Call create_agent_stream with summarize_steps=True
         with patch("SRAgent.agents.utils.create_step_summary_chain", 
                    return_value=mock_summary_chain):
             with patch("sys.stderr"):  # Redirect stderr to avoid printing during test
                 result = await create_agent_stream(
-                    "test input", 
+                    test_input, 
                     mock_create_agent_func, 
                     summarize_steps=True
                 )
         
         # Assert results
         assert result == "Test message"
-        mock_summary_chain.invoke.assert_called_once()
+        mock_summary_chain.ainvoke.assert_called_once()
     
     @pytest.mark.asyncio
     async def test_create_agent_stream_dict_formats(self):
@@ -384,8 +382,12 @@ class TestCreateAgentStream:
         mock_agent1.astream = mock_astream1
         mock_create_agent_func1 = MagicMock(return_value=mock_agent1)
         
+        test_input1 = {
+            "messages": [MagicMock(content="Test query")]
+        }
+        
         with patch("sys.stderr"):
-            result1 = await create_agent_stream("test input", mock_create_agent_func1)
+            result1 = await create_agent_stream(test_input1, mock_create_agent_func1)
         assert result1 == "Final agent message"
         
         # Test with messages format
@@ -400,8 +402,12 @@ class TestCreateAgentStream:
         mock_agent2.astream = mock_astream2
         mock_create_agent_func2 = MagicMock(return_value=mock_agent2)
         
+        test_input2 = {
+            "messages": [MagicMock(content="Test query")]
+        }
+        
         with patch("sys.stderr"):
-            result2 = await create_agent_stream("test input", mock_create_agent_func2)
+            result2 = await create_agent_stream(test_input2, mock_create_agent_func2)
         assert result2 == "Regular message"
     
     @pytest.mark.asyncio
@@ -417,9 +423,13 @@ class TestCreateAgentStream:
         mock_agent.astream = mock_astream_string
         mock_create_agent_func = MagicMock(return_value=mock_agent)
 
+        test_input = {
+            "messages": [MagicMock(content="Test query")]
+        }
+
         # Call create_agent_stream
         with patch("sys.stderr"):  # Redirect stderr
-            result = await create_agent_stream("test input", mock_create_agent_func)
+            result = await create_agent_stream(test_input, mock_create_agent_func)
 
         # Assert the final string is returned
         # NOTE: The original implementation likely expects a dict-like structure.

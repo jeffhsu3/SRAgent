@@ -55,7 +55,6 @@ def metadata_agent_parser(subparsers):
         '--tenant', type=str, default='prod',
         choices=['prod', 'test'],
         help='Tenant name for the SRAgent SQL database'
-
     )
 
 

@@ -39,7 +39,8 @@ dependencies = [
     "networkx~=3.4.2",
     "obonet~=1.1.0",
     "protobuf~=5.29.4",
-    "appdirs~=1.4.4"
+    "appdirs~=1.4.4",
+    "rich~=14.0.0"
 ]
 
 [project.optional-dependencies]

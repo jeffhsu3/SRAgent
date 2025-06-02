@@ -1,4 +1,3 @@
-
 # import
 ## batteries
 import os
@@ -7,7 +6,7 @@ from Bio import Entrez
 from langchain_core.messages import HumanMessage
 from SRAgent.cli.utils import CustomFormatter
 from SRAgent.agents.sragent import create_sragent_agent
-from SRAgent.agents.utils import create_agent_stream
+from SRAgent.agents.utils import create_agent_stream, display_final_results
 
 # functions
 def sragent_parser(subparsers):
@@ -30,7 +29,7 @@ def sragent_parser(subparsers):
     sub_parser.add_argument('--max-concurrency', type=int, default=3, 
                             help='Maximum number of concurrent processes')
     sub_parser.add_argument('--recursion-limit', type=int, default=40,
-                            help='Maximum recursion limit')   
+                            help='Maximum recursion limit')
 
 def sragent_main(args):
     """
@@ -48,10 +47,14 @@ def sragent_main(args):
     input = {"messages": [HumanMessage(content=args.prompt)]}
     results = asyncio.run(
         create_agent_stream(
-            input, create_sragent_agent, config, summarize_steps=not args.no_summaries
+            input, create_sragent_agent, config, 
+            summarize_steps=not args.no_summaries,
+            no_progress=args.no_progress
         )
     )
-    print(results)
+    
+    # Display final results with rich formatting
+    display_final_results(results)
 
 # main
 if __name__ == '__main__':

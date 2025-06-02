@@ -1,16 +1,17 @@
 import os
 import re
 import sys
-import asyncio
-from functools import wraps
 from importlib import resources
-from typing import Dict, Any, Optional, Union
+from typing import Dict, Any, Optional
 from langchain_openai import ChatOpenAI
 from langchain_anthropic import ChatAnthropic
 from langchain_core.prompts import PromptTemplate
-from langchain_core.language_models.base import BaseLanguageModel
 from dynaconf import Dynaconf
-import openai
+from rich.console import Console
+from rich.progress import Progress, SpinnerColumn, TextColumn
+from rich.panel import Panel
+from rich.text import Text
+from rich.markdown import Markdown
 
 def load_settings() -> Dict[str, Any]:
     """
@@ -36,180 +37,12 @@ def load_settings() -> Dict[str, Any]:
     )
     return settings
 
-def create_openai_model_with_retry(
-    model_name: str,
-    temperature: Optional[float],
-    reasoning_effort: Optional[str],
-    max_tokens: Optional[int],
-    service_tier: Optional[str],
-    timeout: Optional[float] = 60.0,
-) -> BaseLanguageModel:
-    """
-    Create an OpenAI model with retry logic for flex tier fallback.
-    
-    Args:
-        model_name: The model name
-        temperature: Temperature setting
-        reasoning_effort: Reasoning effort level
-        max_tokens: Maximum tokens
-        service_tier: Service tier ("flex" or "default")
-        timeout: Timeout in seconds for flex tier requests
-        
-    Returns:
-        Configured ChatOpenAI model instance
-    """
-    # Check if flex tier is allowed for this model
-    flex_allowed_models = ["o3-mini", "o4-mini"]
-    model_supports_flex = any(model_name.startswith(prefix) for prefix in flex_allowed_models)
-    
-    # If flex requested but not supported, fall back to default
-    if service_tier == "flex" and not model_supports_flex:
-        print(f"Warning: Flex tier not supported for model {model_name}, using default tier", file=sys.stderr)
-        service_tier = "default"
-    
-    # Determine if this is an o[0-9] model
-    is_o_model = re.match(r"^o[0-9]-", model_name) is not None
-    
-    # Create kwargs for ChatOpenAI
-    kwargs = {
-        "model_name": model_name,
-        "max_tokens": max_tokens,
-    }
-    
-    # Add temperature or reasoning_effort based on model type
-    if is_o_model:
-        kwargs["temperature"] = None
-        kwargs["reasoning_effort"] = reasoning_effort
-    else:
-        kwargs["temperature"] = temperature
-        kwargs["reasoning_effort"] = None
-    
-    # Add service tier if specified
-    if service_tier and service_tier != "default":
-        kwargs["service_tier"] = service_tier
-        if timeout:
-            kwargs["timeout"] = timeout
-    
-    return ChatOpenAI(**kwargs)
-
-def async_retry_on_flex_timeout(func):
-    """
-    Async decorator to retry with default tier if flex tier times out.
-    """
-    @wraps(func)
-    async def wrapper(self, *args, **kwargs):
-        # Check if we're using flex tier
-        service_tier = getattr(self, '_service_tier', None)
-        model_name = getattr(self, 'model_name', None)
-        
-        if service_tier != "flex":
-            # Not using flex tier, just call the function normally
-            return await func(self, *args, **kwargs)
-        
-        try:
-            # Try with flex tier first
-            return await func(self, *args, **kwargs)
-        except (asyncio.TimeoutError, openai.APITimeoutError) as e:
-            print(f"Flex tier timeout for model {model_name}, retrying with default tier...", file=sys.stderr)
-            
-            # Create a new instance with default tier
-            if hasattr(self, '_fallback_model'):
-                # Use pre-created fallback model if available
-                fallback_model = self._fallback_model
-            else:
-                # Create fallback model on the fly
-                fallback_kwargs = {
-                    "model_name": self.model_name,
-                    "temperature": getattr(self, 'temperature', None),
-                    "max_tokens": getattr(self, 'max_tokens', None),
-                }
-                # Add reasoning_effort if it's an o-model
-                if hasattr(self, 'reasoning_effort'):
-                    fallback_kwargs["reasoning_effort"] = self.reasoning_effort
-                fallback_model = ChatOpenAI(**fallback_kwargs)
-            
-            # Retry with default tier
-            return await fallback_model.ainvoke(*args, **kwargs)
-        except Exception as e:
-            # For other exceptions, just raise them
-            raise
-    
-    return wrapper
-
-def sync_retry_on_flex_timeout(func):
-    """
-    Sync decorator to retry with default tier if flex tier times out.
-    """
-    @wraps(func)
-    def wrapper(self, *args, **kwargs):
-        # Check if we're using flex tier
-        service_tier = getattr(self, '_service_tier', None)
-        model_name = getattr(self, 'model_name', None)
-        
-        if service_tier != "flex":
-            # Not using flex tier, just call the function normally
-            return func(self, *args, **kwargs)
-        
-        try:
-            # Try with flex tier first
-            return func(self, *args, **kwargs)
-        except (openai.APITimeoutError,) as e:
-            print(f"Flex tier timeout for model {model_name}, retrying with default tier...", file=sys.stderr)
-            
-            # Create a new instance with default tier
-            if hasattr(self, '_fallback_model'):
-                # Use pre-created fallback model if available
-                fallback_model = self._fallback_model
-            else:
-                # Create fallback model on the fly
-                fallback_kwargs = {
-                    "model_name": self.model_name,
-                    "temperature": getattr(self, 'temperature', None),
-                    "max_tokens": getattr(self, 'max_tokens', None),
-                }
-                # Add reasoning_effort if it's an o-model
-                if hasattr(self, 'reasoning_effort'):
-                    fallback_kwargs["reasoning_effort"] = self.reasoning_effort
-                fallback_model = ChatOpenAI(**fallback_kwargs)
-            
-            # Retry with default tier
-            return fallback_model.invoke(*args, **kwargs)
-        except Exception as e:
-            # For other exceptions, just raise them
-            raise
-    
-    return wrapper
-
-class FlexTierChatOpenAI(ChatOpenAI):
-    """
-    Extended ChatOpenAI that supports automatic fallback from flex to default tier.
-    """
-    def __init__(self, *args, service_tier: Optional[str] = None, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._service_tier = service_tier
-        
-        # Create fallback model if using flex tier
-        if service_tier == "flex":
-            fallback_kwargs = kwargs.copy()
-            fallback_kwargs.pop('service_tier', None)
-            fallback_kwargs.pop('timeout', None)
-            self._fallback_model = ChatOpenAI(**fallback_kwargs)
-    
-    @async_retry_on_flex_timeout
-    async def ainvoke(self, *args, **kwargs):
-        return await super().ainvoke(*args, **kwargs)
-    
-    @sync_retry_on_flex_timeout
-    def invoke(self, *args, **kwargs):
-        return super().invoke(*args, **kwargs)
-
 def set_model(
     model_name: Optional[str] = None,
     temperature: Optional[float] = None,
     reasoning_effort: Optional[str] = None,
     agent_name: str = "default",
     max_tokens: Optional[int] = None,
-    service_tier: Optional[str] = None,
 ) -> Any:
     """
     Create a model instance with settings from configuration
@@ -219,7 +52,6 @@ def set_model(
         reasoning_effort: Override reasoning effort from settings
         agent_name: Name of the agent to get settings for
         max_tokens: Maximum number of tokens to use for the model
-        service_tier: Override service tier from settings ("flex" or "default")
     Returns:
         Configured model instance
     """
@@ -253,26 +85,6 @@ def set_model(
             except KeyError:
                 if temperature is None:
                     raise ValueError(f"No reasoning effort or temperature was provided for agent '{agent_name}'")
-    
-    # Get service tier from settings if not provided
-    if service_tier is None:
-        try:
-            service_tier = settings["service_tier"][agent_name]
-        except KeyError:
-            try:
-                service_tier = settings["service_tier"]["default"]
-            except KeyError:
-                service_tier = "default"  # Default to standard tier
-    
-    # Get timeout from settings
-    timeout = None
-    try:
-        timeout = settings["flex_timeout"][agent_name]
-    except KeyError:
-        try:
-            timeout = settings["flex_timeout"]["default"]
-        except KeyError:
-            timeout = 60.0  # Default 60 seconds timeout
 
     # Check model provider and initialize appropriate model
     if model_name.startswith("claude"): # e.g.,  "claude-3-7-sonnet-20250219"
@@ -295,16 +107,12 @@ def set_model(
             if temperature is None:
                 raise ValueError(f"Temperature is required for Claude models if reasoning_effort is not set")
         model = ChatAnthropic(model=model_name, temperature=temperature, thinking=thinking, max_tokens=max_tokens)
-    elif model_name.startswith("gpt-4") or re.search(r"^o[0-9]-", model_name):
-        # OpenAI models (including o-models)
-        model = FlexTierChatOpenAI(
-            model_name=model_name,
-            temperature=temperature if not re.search(r"^o[0-9]-", model_name) else None,
-            reasoning_effort=reasoning_effort if re.search(r"^o[0-9]-", model_name) else None,
-            max_tokens=max_tokens,
-            service_tier=service_tier,
-            timeout=timeout if service_tier == "flex" else None,
-        )
+    elif model_name.startswith("gpt-4"):
+        # GPT-4o models use temperature but not reasoning_effort
+        model = ChatOpenAI(model_name=model_name, temperature=temperature, reasoning_effort=None, max_tokens=max_tokens)
+    elif re.search(r"^o[0-9]-", model_name):
+        # o[0-9] models use reasoning_effort but not temperature
+        model = ChatOpenAI(model_name=model_name, temperature=None, reasoning_effort=reasoning_effort, max_tokens=max_tokens)
     else:
         raise ValueError(f"Model {model_name} not supported")
 
@@ -337,11 +145,97 @@ def create_step_summary_chain(model: Optional[str]=None, max_tokens: int=45):
     return prompt | model
 
 
+def format_agent_message(message_content: str, agent_name: str) -> str:
+    """
+    Format agent message content for better readability with rich markup.
+    Args:
+        message_content: The raw message content
+        agent_name: The name of the agent
+    Returns:
+        Formatted message content with rich markup
+    """
+    # Clean up common patterns
+    content = message_content.strip()
+    
+    # extract content from message_content if complex string
+    match = re.search(r"content='(.*?)'", str(message_content), re.DOTALL)
+    if match:
+        content = match.group(1)
+    
+    # Convert literal \n to actual newlines and handle other escape sequences
+    content = content.replace('\\n', '\n').replace('\\t', '\t').replace("\\'", "'").replace('\\"', '"')
+    
+    # Check for error messages
+    if content.startswith("Error:") or content.startswith("I am currently unable"):
+        return f"[red]{content}[/red]"
+
+    # limit the string to 100 characters
+    if len(content) > 100:
+        content = content[:100].rstrip() + "..."
+    
+    # General formatting for all agents
+    lines = content.split('\n')
+    formatted_lines = []
+    
+    for line in lines:
+        line = line.strip()
+        if line:
+            # Section headers (lines ending with colon and short enough)
+            if line.endswith(':') and len(line) < 60:
+                formatted_lines.append(f"[bold yellow]{line}[/bold yellow]")
+            # Key-value pairs (contain colon but don't end with colon)
+            elif ':' in line and not line.endswith(':') and len(line.split(':', 1)[0]) < 40:
+                parts = line.split(':', 1)
+                formatted_lines.append(f"[bold cyan]{parts[0]}:[/bold cyan] {parts[1].strip()}")
+            # Bullet points
+            elif line.startswith(("•", "-", "*")) or line.startswith(("  •", "  -", "  *")):
+                formatted_lines.append(f"[green]{line}[/green]")
+            # Lines that look like accession numbers or IDs
+            elif re.match(r'^[A-Z]{2,3}[0-9]{6,}', line.split()[0] if line.split() else ''):
+                formatted_lines.append(f"[cyan]{line}[/cyan]")
+            # Regular lines
+            else:
+                formatted_lines.append(line)
+        else:
+            # Preserve empty lines for spacing
+            formatted_lines.append('')
+    
+    return '\n'.join(formatted_lines)
+
+
+def display_step_simple(console: Console, step_cnt: int, step: Any):
+    """
+    Display a step in simple format for --no-summaries mode.
+    """
+    if isinstance(step, dict) and 'messages' in step:
+        if isinstance(step['messages'], list) and step['messages']:
+            msg = step['messages'][-1]
+        elif isinstance(step['messages'], str):
+            msg = step['messages']
+        if hasattr(msg, 'content'):
+            agent_name = getattr(msg, 'name', 'agent')
+            if not agent_name:
+                agent_name = "No agent"
+            msg = format_agent_message(msg.content.strip(), agent_name)
+        else:
+            msg = "No message content"
+        if msg == "":
+            msg = "No message content"
+        # don't show the first step, since just a repeat of the query
+        if step_cnt == 1:
+            return
+        else:
+            step_cnt -= 1
+        # print the step
+        console.print(f"[bold green]✅ Step {step_cnt}[/bold green]\n[dim]{msg}[/dim]")    
+
+
 async def create_agent_stream(
     input,  
     create_agent_func,
     config: dict={}, 
-    summarize_steps: bool=False
+    summarize_steps: bool=False,
+    no_progress: bool=False
 ) -> str:
     """
     Create an Entrez agent and stream the steps.
@@ -350,6 +244,7 @@ async def create_agent_stream(
         create_agent_func: Function to create the agent.
         config: Configuration for the agent.
         summarize_steps: Whether to summarize the steps.
+        no_progress: Whether to disable progress bar display.
     Returns:
         The final step message.
     """
@@ -359,26 +254,80 @@ async def create_agent_stream(
     # create step summary chain
     step_summary_chain = create_step_summary_chain() if summarize_steps else None
     
+    # Initialize rich console
+    console = Console(stderr=True)
+    
+    # Print header
+    console.print(Panel.fit(
+        f"[bold green]🤖 SRAgent Processing Request[/bold green]\n\n"
+        f"[yellow]Query:[/yellow] {input['messages'][0].content}",
+        border_style="green",
+        padding=(1, 2)
+    ))
+    console.print()
+    
     # invoke agent
     step_cnt = 0
     final_step = ""
-    async for step in agent.astream(input, stream_mode="values", config=config):
-        step_cnt += 1
-        final_step = step
-        # summarize step
-        if step_summary_chain:
-            msg = step_summary_chain.invoke({"step": step.get("messages")})
-            print(f"Step {step_cnt}: {msg.content}", file=sys.stderr)
-        else:
-            try:
-                if "messages" in step and step["messages"]:
-                    last_msg = step["messages"][-1].content
-                    if last_msg != "":
-                        print(f"Step {step_cnt}: {last_msg}", file=sys.stderr)
+    
+    if no_progress:
+        # No progress bar mode
+        async for step in agent.astream(input, stream_mode="values", config=config):
+            step_cnt += 1
+            final_step = step
+            
+            # summarize step
+            if step_summary_chain:
+                # Handle different step formats
+                step_messages = None
+                if isinstance(step, dict) and 'messages' in step:
+                    step_messages = step.get("messages")
+                elif isinstance(step, list):
+                    step_messages = step
+                else:
+                    step_messages = str(step)
+                
+                msg = await step_summary_chain.ainvoke({"step": step_messages})
+                console.print(f"[bold green]✅ Step {step_cnt}:[/bold green] {msg.content}")
+            else:
+                # No summaries mode - use simple display
+                display_step_simple(console, step_cnt, step)
+    else:
+        # With progress bar
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+            transient=True
+        ) as progress:
+            task = progress.add_task("[cyan]Processing...", total=None)
+            
+            async for step in agent.astream(input, stream_mode="values", config=config):
+                step_cnt += 1
+                final_step = step
+                
+                # Update progress
+                progress.update(task, description=f"[cyan]Step {step_cnt}: Processing...")
+                
+                # summarize step
+                if step_summary_chain:
+                    # Handle different step formats
+                    step_messages = None
+                    if isinstance(step, dict) and 'messages' in step:
+                        step_messages = step.get("messages")
+                    elif isinstance(step, list):
+                        step_messages = step
                     else:
-                        step_cnt -= 1
-            except (KeyError, IndexError, AttributeError):
-                print(f"Step {step_cnt}: {step}", file=sys.stderr)
+                        step_messages = str(step)
+                    
+                    msg = await step_summary_chain.ainvoke({"step": step_messages})
+                    console.print(f"[bold green]✅ Step {step_cnt}:[/bold green] {msg.content}")
+                else:
+                    # No summaries mode - use simple display
+                    display_step_simple(console, step_cnt, step)
+    
+    console.print()  # Add spacing before final results
+    
     # get final step, and handle different types
     try:
         final_step = final_step["agent"]["messages"][-1].content
@@ -388,10 +337,49 @@ async def create_agent_stream(
         except (KeyError, IndexError, AttributeError):
             if isinstance(final_step, str):
                 return final_step
+            elif isinstance(final_step, list):
+                return final_step
             return str(final_step)
     except TypeError:
+        # Handle workflows that return lists directly (like tissue ontology)
+        if isinstance(final_step, list):
+            return final_step
         return str(final_step)
     return final_step
+
+
+def display_final_results(results: Any, title: str = "✨ Final Results ✨") -> None:
+    """
+    Display final results with rich formatting in a consistent format.
+    
+    Args:
+        results: The results to display (can be string, list, or other types)
+        title: The title to display as a header
+    """
+    console = Console()
+    
+    if results:
+        # Convert results to string if needed
+        if isinstance(results, list):
+            # Handle list of results (like Uberon IDs)
+            if all(isinstance(item, str) for item in results):
+                formatted_results = "\n".join(f"- {item}" for item in results)
+            else:
+                formatted_results = str(results)
+        else:
+            formatted_results = str(results)
+        
+        # Display title as header
+        console.print(f"\n[bold green]{title}[/bold green]")
+        
+        # Display results without box
+        if any(char in formatted_results for char in ['#', '*', '-', '1.', '2.']):
+            console.print(Markdown(formatted_results))
+        else:
+            console.print(formatted_results)
+    else:
+        console.print(f"\n[bold green]{title}[/bold green]")
+        console.print("[red]No results returned[/red]")
 
 # main
 if __name__ == "__main__":
@@ -405,3 +393,5 @@ if __name__ == "__main__":
     # set model
     model = set_model(model_name="claude-3-7-sonnet-20250219", agent_name="default")
     print(model)
+
+

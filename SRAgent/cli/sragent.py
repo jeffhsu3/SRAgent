@@ -24,8 +24,6 @@ def sragent_parser(subparsers):
     )
     sub_parser.set_defaults(func=sragent_main)
     sub_parser.add_argument('prompt', type=str, help='Prompt for the agent') 
-    sub_parser.add_argument('--no-summaries', action='store_true', default=False,
-                            help='No LLM summaries')
     sub_parser.add_argument('--max-concurrency', type=int, default=3, 
                             help='Maximum number of concurrent processes')
     sub_parser.add_argument('--recursion-limit', type=int, default=40,

@@ -41,6 +41,10 @@ def arg_parse(args=None) -> dict:
         "--no-progress", action="store_true", default=False,
         help="Disable progress display"
     )
+    parser.add_argument(
+        "--no-summaries", action="store_true", default=False,
+        help="Disable LLM summaries for each workflowstep"
+    )
 
     # subparsers
     subparsers = parser.add_subparsers(dest="command", help="Subcommands")

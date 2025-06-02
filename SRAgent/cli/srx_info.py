@@ -31,9 +31,6 @@ def SRX_info_agent_parser(subparsers):
         help='Entrez database origin of the Entrez IDs'
     )
     sub_parser.add_argument(
-        '--no-summaries', action='store_true', default=False, help='No LLM summaries'
-    )
-    sub_parser.add_argument(
         '--max-concurrency', type=int, default=6, help='Maximum number of concurrent processes'
     )
     sub_parser.add_argument(

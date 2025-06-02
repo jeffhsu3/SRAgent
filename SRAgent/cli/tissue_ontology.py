@@ -23,11 +23,7 @@ def tissue_ontology_parser(subparsers):
         'tissue-ontology', help=help, description=desc, formatter_class=CustomFormatter
     )
     sub_parser.set_defaults(func=tissue_ontology_main)
-    sub_parser.add_argument('prompt', type=str, help='Tissue description(s) to categorize')    
-    sub_parser.add_argument('--no-summaries', action='store_true', default=False,
-                            help='No LLM summaries')
-    sub_parser.add_argument('--no-progress', action='store_true', default=False,
-                            help='No progress bar')
+    sub_parser.add_argument('prompt', type=str, help='Tissue description(s) to categorize')
     sub_parser.add_argument('--max-concurrency', type=int, default=3, 
                             help='Maximum number of concurrent processes')
     sub_parser.add_argument('--recursion-limit', type=int, default=40,

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "SRAgent"
-version = "0.3.1"
+version = "0.4.0"
 description = "Agentic workflows for obtaining data from the Sequence Read Archive"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -15,31 +15,32 @@ authors = [
 urls = { "Homepage" = "https://github.com/arcinstitute/SRAgent" }
 dependencies = [
     "python-dotenv>=1.0.1",
+    "dynaconf>=3.2.6",
     "pandas>=2.2.3",
     "tabulate>=0.9.0",
-    "langchain>=0.3.7",
-    "langchainhub>=0.1.21", 
-    "langchain_community>=0.3.5",
-    "openai>=1.57.2",
-    "langchain_openai>=0.2.6",
-    "langchain_anthropic>=0.3.10",
-    "langgraph>=0.2.45",
-    "biopython>=1.84",
+    "langchain~=0.3.25",
+    "langchainhub~=0.1.21", 
+    "langchain_community~=0.3.24",
+    "openai~=1.82.1",
+    "langchain_openai~=0.3.18",
+    "langchain_anthropic~=0.3.14",
+    "langgraph~=0.4.7",
+    "biopython~=1.84",
     "xmltodict>=0.14.2",
     "beautifulsoup4>=4.12.3",
     "google-cloud-bigquery>=3.27.0",
     "google-cloud-bigquery-storage>=2.27.0",
     "google-cloud-secret-manager>=2.22.0",
-    "db-dtypes>=1.3.1",
-    "pypika>=0.48.9",
-    "psycopg2-binary>=2.9.10",
-    "dynaconf>=3.2.6",
-    "chromadb>=0.6.3",
-    "langchain-chroma>=0.2.2",
-    "networkx>=3.4.2",
-    "obonet>=1.1.0",
+    "db-dtypes~=1.3.1",
+    "pypika~=0.48.9",
+    "psycopg2-binary~=2.9.10",
+    "chromadb~=0.6.3",
+    "langchain-chroma~=0.2.2",
+    "networkx~=3.4.2",
+    "obonet~=1.1.0",
     "protobuf~=5.29.4",
-    "appdirs>=1.4.4"
+    "appdirs~=1.4.4",
+    "rich~=14.0.0"
 ]
 
 [project.optional-dependencies]

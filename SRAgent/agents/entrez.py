@@ -17,7 +17,7 @@ from SRAgent.agents.esearch import create_esearch_agent
 from SRAgent.agents.esummary import create_esummary_agent
 from SRAgent.agents.efetch import create_efetch_agent
 from SRAgent.agents.elink import create_elink_agent
-from SRAgent.agents.utils import create_step_summary_chain
+from SRAgent.agents.display import create_step_summary_chain
 
 # functions
 def create_entrez_agent(
@@ -83,7 +83,7 @@ def create_entrez_agent(
     agent = create_react_agent(
         model=model_supervisor,
         tools=tools,
-        state_modifier=state_mod
+        prompt=state_mod
     )
 
     # return agent instead of tool

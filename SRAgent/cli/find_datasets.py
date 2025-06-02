@@ -12,7 +12,7 @@ from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 ## package
 from SRAgent.cli.utils import CustomFormatter
 from SRAgent.workflows.find_datasets import create_find_datasets_graph
-from SRAgent.agents.utils import create_step_summary_chain
+from SRAgent.agents.display import create_step_summary_chain
 from SRAgent.tools.utils import set_entrez_access
 from SRAgent.organisms import OrganismEnum
 
@@ -47,9 +47,6 @@ def find_datasets_parser(subparsers):
     sub_parser.add_argument(
         '--max-date', type=str, default=datetime.now().strftime("%Y/%m/%d"),
         help='Newest date to search for datasets'
-    )
-    sub_parser.add_argument(
-        '--no-summaries', action='store_true', default=False, help='No LLM summaries'
     )
     sub_parser.add_argument(
         '--max-concurrency', type=int, default=6, help='Maximum number of concurrent processes'

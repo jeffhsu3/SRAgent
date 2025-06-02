@@ -12,7 +12,7 @@ from langchain_core.messages import HumanMessage
 ## package
 from SRAgent.cli.utils import CustomFormatter
 from SRAgent.workflows.metadata import get_metadata_items, create_metadata_graph
-from SRAgent.agents.utils import create_step_summary_chain
+from SRAgent.agents.display import create_step_summary_chain
 
 # functions
 def metadata_agent_parser(subparsers):
@@ -30,9 +30,6 @@ def metadata_agent_parser(subparsers):
     sub_parser.add_argument(
         '--database', type=str, default='sra', choices=['gds', 'sra'], 
         help='Entrez database origin of the Entrez IDs'
-    )
-    sub_parser.add_argument(
-        '--no-summaries', action='store_true', default=False, help='No LLM summaries'
     )
     sub_parser.add_argument(
         '--max-concurrency', type=int, default=6, help='Maximum number of concurrent processes'
@@ -55,7 +52,6 @@ def metadata_agent_parser(subparsers):
         '--tenant', type=str, default='prod',
         choices=['prod', 'test'],
         help='Tenant name for the SRAgent SQL database'
-
     )
 
 

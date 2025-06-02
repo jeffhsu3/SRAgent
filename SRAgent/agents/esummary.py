@@ -27,7 +27,7 @@ def create_esummary_agent(model_name: Optional[str] = None) -> Callable:
     agent = create_react_agent(
         model=model,
         tools=[esummary, which_entrez_databases],
-        state_modifier="\n".join([
+        prompt="\n".join([
             "# Instructions",
             " - You are an expert in bioinformatics and you are working on a project to find information about a specific dataset.",
             " - Based on the task provided by your supervisor, use Entrez esearch to help complete the task.",

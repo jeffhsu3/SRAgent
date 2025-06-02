@@ -25,7 +25,7 @@ def create_sequences_agent(model_name: Optional[str]=None) -> Callable:
     agent = create_react_agent(
         model=model,
         tools=[sra_stat, fastq_dump],
-        state_modifier="\n".join([
+        prompt="\n".join([
             "# Instructions",
             " - You are an expert in bioinformatics and you are working on a project to find information about a specific dataset.",
             " - Based on the task provided by your supervisor, use fastq-dump and sra-stat to help complete the task.",

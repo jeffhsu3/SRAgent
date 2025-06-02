@@ -6,7 +6,7 @@ from Bio import Entrez
 from langchain_core.messages import HumanMessage
 from SRAgent.cli.utils import CustomFormatter
 from SRAgent.workflows.tissue_ontology import create_tissue_ontology_workflow
-from SRAgent.agents.utils import create_agent_stream
+from SRAgent.agents.display import create_agent_stream, display_final_results
 
 # functions
 def tissue_ontology_parser(subparsers):
@@ -23,9 +23,7 @@ def tissue_ontology_parser(subparsers):
         'tissue-ontology', help=help, description=desc, formatter_class=CustomFormatter
     )
     sub_parser.set_defaults(func=tissue_ontology_main)
-    sub_parser.add_argument('prompt', type=str, help='Tissue description(s) to categorize')    
-    sub_parser.add_argument('--no-summaries', action='store_true', default=False,
-                            help='No LLM summaries')
+    sub_parser.add_argument('prompt', type=str, help='Tissue description(s) to categorize')
     sub_parser.add_argument('--max-concurrency', type=int, default=3, 
                             help='Maximum number of concurrent processes')
     sub_parser.add_argument('--recursion-limit', type=int, default=40,
@@ -39,28 +37,22 @@ def tissue_ontology_main(args):
     Entrez.email = os.getenv("EMAIL")
     Entrez.api_key = os.getenv("NCBI_API_KEY")
 
-    # create workflow
-    workflow = create_tissue_ontology_workflow()
-
-    # create config
+    # invoke workflow with streaming
     config = {
         "max_concurrency": args.max_concurrency,
         "recursion_limit": args.recursion_limit
     }
-
-    # prepare input
     input = {"messages": [HumanMessage(content=args.prompt)]}
+    results = asyncio.run(
+        create_agent_stream(
+            input, create_tissue_ontology_workflow, config, 
+            summarize_steps=not args.no_summaries,
+            no_progress=args.no_progress
+        )
+    )
     
-    # invoke workflow
-    results = asyncio.run(workflow.ainvoke(input, config=config))
-    
-    # print results
-    if results:
-        print("\nUberon IDs for the tissue descriptions:")
-        for uberon_id in results:
-            print(f"- {uberon_id}")
-    else:
-        print("No suitable Uberon ontology terms found for the provided tissue descriptions.")
+    # Display final results with rich formatting
+    display_final_results(results, "🧬 Uberon Tissue Classifications 🧬")
 
 # main
 if __name__ == '__main__':

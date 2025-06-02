@@ -3,6 +3,8 @@ default:
   db_port: 5432
   db_user: "postgres"
   db_timeout: 30
+  service_tier: "standard"
+  flex_timeout: 180
 
 test:
   db_name: "sragent-test"
@@ -25,6 +27,7 @@ test:
     entrez_convert: "gpt-4.1-mini"
     find_datasets: "gpt-4.1-mini"
     step_summary: "gpt-4.1-mini"
+    get_entrez_ids: "gpt-4.1-mini"
   temperature:
     default: 0.1
     esearch: 0.1
@@ -44,6 +47,7 @@ test:
     entrez_convert: 0.1
     find_datasets: 0.1
     step_summary: 0.1
+    get_entrez_ids: 0.0
   reasoning_effort:
     default: "low"
     esearch: "low"
@@ -63,6 +67,27 @@ test:
     entrez_convert: "low"
     find_datasets: "low"
     step_summary: ""
+    get_entrez_ids: "low"
+  service_tier:
+    default: "flex"
+    esearch: "default"
+    esummary: "default"
+    elink: "default"
+    efetch: "default"
+    sequences: "default"
+    ncbi_fetch: "flex"
+    bigquery: "flex"
+    entrez: "flex"
+    sragent: "flex"
+    tissue_ontology: "flex"
+    metadata: "default"
+    metadata_router: "flex"
+    convert_router: "default"
+    accessions: "default"
+    entrez_convert: "default"
+    find_datasets: "default"
+    step_summary: "default"
+    get_entrez_ids: "default"
     
 prod:
   db_name: "sragent-prod"
@@ -85,6 +110,7 @@ prod:
     entrez_convert: "gpt-4.1-mini"
     find_datasets: "gpt-4.1-mini"
     step_summary: "gpt-4.1-mini"
+    get_entrez_ids: "gpt-4.1-mini"
   temperature:
     default: 0.1
     esearch: 0.1
@@ -104,6 +130,7 @@ prod:
     entrez_convert: 0.1
     find_datasets: 0.1
     step_summary: 0.1
+    get_entrez_ids: 0.0
   reasoning_effort:
     default: "low"
     esearch: "low"
@@ -123,11 +150,32 @@ prod:
     entrez_convert: "low"
     find_datasets: "low"
     step_summary: ""
+    get_entrez_ids: "low"
+  service_tier:
+    default: "flex"
+    esearch: "default"
+    esummary: "default"
+    elink: "default"
+    efetch: "default"
+    sequences: "default"
+    ncbi_fetch: "flex"
+    bigquery: "flex"
+    entrez: "flex"
+    sragent: "flex"
+    tissue_ontology: "flex"
+    metadata: "default"
+    metadata_router: "flex"
+    convert_router: "default"
+    accessions: "default"
+    entrez_convert: "default"
+    find_datasets: "default"
+    step_summary: "default"
+    get_entrez_ids: "default"
   
 claude:
   db_name: "sragent-test"
   models:
-    default: "claude-3-7-sonnet-latest"
+    default: "claude-sonnet-4-latest"
   temperature:
     default: 0.1
   reasoning_effort:
@@ -148,3 +196,5 @@ claude:
     entrez_convert: "medium"
     find_datasets: "medium"
     step_summary: ""
+  service_tier:
+    default: "default"

@@ -23,7 +23,7 @@ def create_elink_agent(model_name: Optional[str] = None) -> Callable:
     agent = create_react_agent(
         model=model,
         tools=[elink, which_entrez_databases],
-        state_modifier="\n".join([
+        prompt="\n".join([
             "# Instructions",
             " - You are an expert in bioinformatics and you are working on a project to find information about a specific dataset.",
             " - Based on the task provided by your supervisor, use Entrez elink to help complete the task.",

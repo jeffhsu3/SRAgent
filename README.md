@@ -99,6 +99,7 @@ SRAgent does not use the SQL database by default.
 
 To set up the database, see [Setting up the SQL Database](#setting-up-the-sql-database).
 
+
 ## Entrez Agent
 
 The lowest-level agent in the SRAgent hiearchy.
@@ -111,10 +112,10 @@ Usually, the SRAgent agent will be more useful, since it includes more tools, in
 SRAgent entrez "Convert GSE121737 to SRX accessions"
 ```
 
-#### Example of obtaining pubmed articles associated with a dataset accession:
+#### Example of summarizing a dataset:
 
 ```bash
-SRAgent entrez "Obtain any available publications for GSE196830"
+SRAgent entrez "Summarize SRX4967527"
 ```
 
 ## SRAgent agent
@@ -127,7 +128,9 @@ The tools available:
 * scraping NCBI webpage HTML
 * sra-stat and fastq-dump (directly assessing sequence data)
 
-#### Example of converting a GEO accession to SRX accessions:
+#### Example of summarizing a dataset
+
+> using more tools than the Entrez agent
 
 ```bash
 SRAgent sragent "Summarize SRX4967527"
@@ -265,8 +268,9 @@ SRAgent find-datasets --max-datasets 2 \
 #### Target specific organisms
 
 ```bash
-SRAgent find-datasets --no-summaries --max-datasets 1 --organisms pig -- \
-  "Obtain recent single cell RNA-seq datasets in the SRA database"
+SRAgent --no-summaries \
+  find-datasets --max-datasets 1 --organisms pig -- \
+    "Obtain recent single cell RNA-seq datasets in the SRA database"
 ```
 
 <details>
@@ -338,9 +342,33 @@ SRAgent find-datasets --no-summaries --max-datasets 1 --organisms pig -- \
 Using the `test` database:
 
 ```bash
-SRAgent find-datasets --use-database --tenant test \
-  --no-summaries --max-datasets 1 --organisms rat -- \
-  "Obtain recent single cell RNA-seq datasets in the SRA database"
+SRAgent --no-summaries \
+  find-datasets --use-database --tenant test \
+    --max-datasets 1 --organisms rat -- \
+    "Obtain recent single cell RNA-seq datasets in the SRA database"
+```
+
+## Workflow status
+
+By default, most SRAgent sub-commands (e.g., `entrez` and `sragent`) use "fancy" CLI output formatting:
+
+#### Progress bar
+
+<img src="./assets/cli1.png" width="600">
+
+#### Final results
+
+<img src="./assets/cli2.png" width="600">
+
+#### Parameters for controlling the CLI workflow status output
+
+* `--no-progress`: Disable progress bar
+* `--no-summaries`: Disable LLM summaries for each workflowstep
+
+Example:
+
+```bash
+SRAgent --no-summaries --no-progress entrez "Convert GSE121737 to SRX accessions"
 ```
 
 # Configuring models

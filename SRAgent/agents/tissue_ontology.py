@@ -66,7 +66,7 @@ def create_tissue_ontology_agent(
     agent = create_react_agent(
         model=model,
         tools=tools,
-        state_modifier=state_mod,
+        prompt=state_mod,
         response_format=UBERON_ID,
     )
 

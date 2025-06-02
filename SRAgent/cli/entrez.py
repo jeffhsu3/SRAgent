@@ -6,7 +6,7 @@ from Bio import Entrez
 from langchain_core.messages import HumanMessage
 from SRAgent.cli.utils import CustomFormatter
 from SRAgent.agents.entrez import create_entrez_agent
-from SRAgent.agents.utils import create_agent_stream
+from SRAgent.agents.display import create_agent_stream, display_final_results
 
 # functions
 def entrez_agent_parser(subparsers):
@@ -24,8 +24,6 @@ def entrez_agent_parser(subparsers):
     )
     sub_parser.set_defaults(func=entrez_agent_main)
     sub_parser.add_argument('prompt', type=str, help='Prompt for the agent')    
-    sub_parser.add_argument('--no-summaries', action='store_true', default=False,
-                            help='No LLM summaries')
     sub_parser.add_argument('--max-concurrency', type=int, default=3, 
                             help='Maximum number of concurrent processes')
     sub_parser.add_argument('--recursion-limit', type=int, default=40,
@@ -47,11 +45,14 @@ def entrez_agent_main(args):
     input = {"messages": [HumanMessage(content=args.prompt)]}
     results = asyncio.run(
         create_agent_stream(
-            input, create_entrez_agent, config, summarize_steps=not args.no_summaries
+            input, create_entrez_agent, config, 
+            summarize_steps=not args.no_summaries,
+            no_progress=args.no_progress
         )
     )
-    print(results)
-            
+    
+    # Display final results with rich formatting
+    display_final_results(results)
 
 # main
 if __name__ == '__main__':

@@ -32,14 +32,14 @@ WORKDIR /app
 COPY pyproject.toml /app/
 
 # Install the dependencies
-RUN uv pip install --upgrade pip setuptools wheel \
-    && uv pip install .
+RUN uv pip install --system --upgrade pip setuptools wheel \
+    && uv pip install --system .
 
 # Copy the source code
 COPY SRAgent/ /app/SRAgent/
 
 # Install the package
-RUN uv pip install .
+RUN uv pip install --system .
 
 # Set the default entry point for the container
 ENTRYPOINT ["SRAgent"]

@@ -9,7 +9,6 @@ import asyncio
 import argparse
 from typing import List, Dict, Any, Optional
 import pandas as pd
-from Bio import Entrez
 from langchain_core.messages import HumanMessage
 from SRAgent.db.connect import db_connect
 from SRAgent.db.update import db_update
@@ -29,14 +28,16 @@ def get_records_missing_tissue_ontology(conn, limit: int = None) -> pd.DataFrame
         DataFrame with records missing tissue_ontology_term_id
     """
     query = """
-    SELECT database, entrez_id, srx_accession, organism, tissue, disease, perturbation, cell_line
+    SELECT DISTINCT database, entrez_id, srx_accession, organism, tissue, disease, perturbation, cell_line
     FROM srx_metadata
+    INNER JOIN screcounter_star_results ON srx_metadata.srx_accession = screcounter_star_results.sample
     WHERE (tissue_ontology_term_id IS NULL OR tissue_ontology_term_id = '')
     AND tissue IS NOT NULL 
-    AND tissue != ''
-    AND tissue != 'unknown'
     AND tissue != 'NaN'
-    ORDER BY entrez_id
+    AND is_illumina = 'yes'
+    AND is_single_cell = 'yes'
+    AND is_paired_end = 'yes'
+    AND lib_prep = '10x_Genomics'
     """
     
     if limit:
@@ -52,7 +53,6 @@ async def process_record(record: Dict[str, Any], workflow) -> Optional[List[str]
     Args:
         record: Dictionary containing the record data
         workflow: The tissue ontology workflow
-        
     Returns:
         List of Uberon IDs
     """
@@ -72,8 +72,6 @@ async def process_record(record: Dict[str, Any], workflow) -> Optional[List[str]
         perturbation = "No perturbation provided"
     if cell_line in [None, "", "None", "none", "NA", "n/a"]:
         cell_line = "No cell line provided"
-    
-    tissue = "lung";   # debug
 
     message = "\n".join([
         f"Tissue description: {tissue}\n",
@@ -97,8 +95,7 @@ async def update_tissue_ontologies(
     target_records: pd.DataFrame,
     delay: float = 0.5,
     no_delay: bool = False,
-    dry_run: bool = False
-):
+) -> None:
     """
     Main function to update tissue ontologies.
     
@@ -106,7 +103,6 @@ async def update_tissue_ontologies(
         target_records: DataFrame of target records to update
         delay: Delay in seconds between API calls
         no_delay: Skip delays between API calls
-        dry_run: Show what would be updated without making changes
     """
     # set entrez email and api key
     set_entrez_access()
@@ -124,50 +120,43 @@ async def update_tissue_ontologies(
     for _,record in target_records.iterrows():
         # progress indicator
         processed += 1
-        #srx = record['srx_accession']
-        #tissue = record['tissue']
-            
-        # progress indicator
-        #print(f"\n[{processed}/{total_records}] Processing {srx}")
-        #print(f"  Tissue: {tissue[:100]}{'...' if len(tissue) > 100 else ''}")
+        if processed % 100 == 0:
+            print(f"  - Processed {processed}/{total_records} records", file=sys.stderr)
             
         # Get tissue ontology terms
         ontology_ids = await process_record(record.to_dict(), workflow)
-            
-        # Update database if ontology terms are found
-        if ontology_ids:
-            # Format the ontology IDs as comma-separated string
-            ontology_str = ",".join(ontology_ids)
-            #print(f"  Found ontology terms: {ontology_str}")
-            
-            # Prepare update data
-            update_df = pd.DataFrame([{
-                "database": record["database"],
-                "entrez_id": int(record["entrez_id"]),
-                "tissue_ontology_term_id": ontology_str
-            }])
-            
-            try:
-                # Update the database
-                with db_connect() as conn:
-                    db_update(update_df, "srx_metadata", conn)
-                updated += 1
-            except Exception as e:
-                failed += 1
+
+        if not ontology_ids:
+            ontology_str = ""
         else:
-            no_ontology += 1
+            ontology_str = ",".join(ontology_ids)
+            
+        # Prepare update data
+        update_df = pd.DataFrame([{
+            "database": record["database"],
+            "entrez_id": int(record["entrez_id"]),
+            "tissue_ontology_term_id": ontology_str
+        }])
+            
+        try:
+            # Update the database
+            with db_connect() as conn:
+                db_update(update_df, "srx_metadata", conn)
+            updated += 1
+        except Exception as e:
+            failed += 1
         
         # Add a small delay to avoid overwhelming the API
         if not no_delay and processed < total_records:
             await asyncio.sleep(delay)
         
-        # Print summary
-        print("\n" + "="*50)
-        print(f"Summary:")
-        print(f"  Total records processed: {processed}")
-        print(f"  Successfully updated: {updated}")
-        print(f"  Failed updates: {failed}")
-        print(f"  No ontology found: {no_ontology}")
+    # Print summary
+    print("\n" + "="*50)
+    print(f"Summary:")
+    print(f" - Successfully updated: {updated}")
+    print(f" - Failed updates: {failed}")
+    print(f" - No ontology found: {no_ontology}")
+    print(f" - Total records processed: {processed}")
 
 
 def parse_args():
@@ -205,7 +194,7 @@ Examples:
     parser.add_argument(
         "--delay",
         type=float,
-        default=0.5,
+        default=0.1,
         help="Delay in seconds between API calls"
     )
     parser.add_argument(
@@ -246,10 +235,11 @@ def main():
     # If dry run, just show what would be updated
     if args.dry_run:
         print(f"DRY RUN: Checking {args.tenant} database for records missing tissue_ontology_term_id...")
-        print(f"\nWould process {len(target_records)} records:")
-        for _,record in target_records.iterrows():
-            print(f"  - {record['srx_accession']}: {record['tissue'][:80]}{'...' if len(record['tissue']) > 80 else ''}")
-        return
+        print(f"\nWould process {len(target_records)} records")
+        if len(target_records) <= 20:
+            for _,record in target_records.iterrows():
+                print(f"  - {record['srx_accession']}: {record['tissue'][:80]}{'...' if len(record['tissue']) > 80 else ''}")
+        return None
     
     # Run the async main function
     try:
@@ -258,7 +248,6 @@ def main():
                 target_records=target_records,
                 delay=args.delay,
                 no_delay=args.no_delay,
-                dry_run=args.dry_run
             )
         )
     except KeyboardInterrupt:

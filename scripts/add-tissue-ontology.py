@@ -120,7 +120,7 @@ async def update_tissue_ontologies(
     for _,record in target_records.iterrows():
         # progress indicator
         processed += 1
-        if processed % 100 == 0:
+        if processed % 10 == 0:
             print(f"  - Processed {processed}/{total_records} records", file=sys.stderr)
             
         # Get tissue ontology terms
@@ -128,6 +128,7 @@ async def update_tissue_ontologies(
 
         if not ontology_ids:
             ontology_str = ""
+            no_ontology += 1
         else:
             ontology_str = ",".join(ontology_ids)
             
@@ -144,6 +145,7 @@ async def update_tissue_ontologies(
                 db_update(update_df, "srx_metadata", conn)
             updated += 1
         except Exception as e:
+            print(f"Failed to update record {record['srx_accession']}: {str(e)}", file=sys.stderr)
             failed += 1
         
         # Add a small delay to avoid overwhelming the API
@@ -251,7 +253,7 @@ def main():
             )
         )
     except KeyboardInterrupt:
-        print("\nInterrupted by user")
+        print("\nInterrupted by user", file=sys.stderr)
         sys.exit(1)
     except Exception as e:
         print(f"Error: {str(e)}", file=sys.stderr)

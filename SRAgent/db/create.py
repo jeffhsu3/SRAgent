@@ -148,8 +148,8 @@ def create_screcounter_star_results(conn: connection) -> None:
     stmt = Query \
         .create_table(tbl_name) \
         .columns(
-            Column("sample", "VARCHAR(20)", nullable=False),
-            Column("feature", "VARCHAR(30)", nullable=False),
+            Column("sample", "VARCHAR(20)", nullable=False),   # aka: srx_accession
+            Column("feature", "VARCHAR(30)", nullable=False),  # STAR feature type
             Column("estimated_number_of_cells", "INT"),
             Column("fraction_of_unique_reads_in_cells", "FLOAT"),
             Column("mean_gene_per_cell", "FLOAT"),

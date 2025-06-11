@@ -10,6 +10,8 @@ import argparse
 from typing import List, Dict, Any, Optional
 import pandas as pd
 from langchain_core.messages import HumanMessage
+from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn, TimeRemainingColumn
+from rich.console import Console
 from SRAgent.db.connect import db_connect
 from SRAgent.db.update import db_update
 from SRAgent.workflows.tissue_ontology import create_tissue_ontology_workflow
@@ -110,55 +112,71 @@ async def update_tissue_ontologies(
     # Create the tissue ontology workflow
     workflow = create_tissue_ontology_workflow()
     
-    # Connect to database
-    # Process records in batches to avoid keeping too many updates in memory
+    # Initialize rich console
+    console = Console()
+    
+    # Process records with rich progress bar
     total_records = len(target_records)
-    processed = 0
     updated = 0
     failed = 0
     no_ontology = 0
-    for _,record in target_records.iterrows():
-        # progress indicator
-        processed += 1
-        if processed % 10 == 0:
-            print(f"  - Processed {processed}/{total_records} records", file=sys.stderr)
+    
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        TimeRemainingColumn(),
+        console=console,
+    ) as progress:
+        task = progress.add_task("Processing tissue ontologies...", total=total_records)
+        
+        for _, record in target_records.iterrows():
+            # Update progress with current SRX accession
+            progress.update(task, description=f"Processing {record['srx_accession']}...")
             
-        # Get tissue ontology terms
-        ontology_ids = await process_record(record.to_dict(), workflow)
+            # Get tissue ontology terms
+            ontology_ids = await process_record(record.to_dict(), workflow)
 
-        if not ontology_ids:
-            ontology_str = ""
-            no_ontology += 1
-        else:
-            ontology_str = ",".join(ontology_ids)
+            if not ontology_ids:
+                ontology_str = ""
+                no_ontology += 1
+            else:
+                ontology_str = ",".join(ontology_ids)
+                
+            # Prepare update data
+            update_df = pd.DataFrame([{
+                "database": record["database"],
+                "entrez_id": int(record["entrez_id"]),
+                "tissue_ontology_term_id": ontology_str
+            }])
+                
+            try:
+                # Update the database
+                with db_connect() as conn:
+                    db_update(update_df, "srx_metadata", conn)
+                updated += 1
+            except Exception as e:
+                console.print(f"[red]Failed to update record {record['srx_accession']}: {str(e)}[/red]")
+                failed += 1
             
-        # Prepare update data
-        update_df = pd.DataFrame([{
-            "database": record["database"],
-            "entrez_id": int(record["entrez_id"]),
-            "tissue_ontology_term_id": ontology_str
-        }])
+            # Advance progress
+            progress.advance(task)
             
-        try:
-            # Update the database
-            with db_connect() as conn:
-                db_update(update_df, "srx_metadata", conn)
-            updated += 1
-        except Exception as e:
-            print(f"Failed to update record {record['srx_accession']}: {str(e)}", file=sys.stderr)
-            failed += 1
+            # Add a small delay to avoid overwhelming the API
+            if not no_delay and progress.tasks[0].completed < total_records:
+                await asyncio.sleep(delay)
         
-        # Add a small delay to avoid overwhelming the API
-        if not no_delay and processed < total_records:
-            await asyncio.sleep(delay)
+        # Final update to show completion
+        progress.update(task, description="Processing complete!")
         
-    # Print summary
-    print("\n" + "="*50)
-    print(f"Summary:")
-    print(f" - Successfully updated: {updated}")
-    print(f" - Failed updates: {failed}")
-    print(f" - No ontology found: {no_ontology}")
-    print(f" - Total records processed: {processed}")
+    # Print summary using rich console
+    console.print("\n" + "="*50)
+    console.print("[bold]Summary:[/bold]")
+    console.print(f" - [green]Successfully updated: {updated}[/green]")
+    console.print(f" - [red]Failed updates: {failed}[/red]")
+    console.print(f" - [yellow]No ontology found (blank value used): {no_ontology}[/yellow]")
+    console.print(f" - [blue]Total records processed: {progress.tasks[0].completed}[/blue]")
 
 
 def parse_args():

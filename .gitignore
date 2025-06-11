@@ -44,6 +44,12 @@ var/
 sandbox*
 deepmased_files.txt
 
+# PyPI publishing
+*.tar.gz
+*.whl
+.twine/
+.pypirc
+
 # Virtual environment
 venv/
 env/

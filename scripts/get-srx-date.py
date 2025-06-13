@@ -4,7 +4,7 @@ import sys
 import argparse
 import time
 from datetime import datetime
-from typing import Annotated, List
+from typing import Annotated, List, Callable
 import xml.etree.ElementTree as ET
 from Bio import Entrez
 from google.cloud import bigquery
@@ -12,11 +12,33 @@ import pandas as pd
 from SRAgent.db.connect import db_connect
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn, TimeRemainingColumn
 from rich.console import Console
+from functools import wraps
 
 console = Console()
 
 
-def parse_args():
+def retry_with_backoff(retries: int, backoff_base: int = 2) -> Callable:
+    """Decorator to retry a function with exponential backoff."""
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            for attempt in range(retries):
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    if attempt == retries - 1:
+                        console.print(f"[red]Final attempt failed for {func.__name__}: {e}[/red]")
+                        raise
+                    wait_time = backoff_base ** attempt
+                    console.print(f"[yellow]{func.__name__} attempt {attempt + 1}/{retries} failed: {e}[/yellow]")
+                    console.print(f"[yellow]Retrying in {wait_time} seconds...[/yellow]")
+                    time.sleep(wait_time)
+            return None
+        return wrapper
+    return decorator
+
+
+def parse_args() -> argparse.Namespace:
     """Parse command line arguments."""
     class CustomFormatter(argparse.ArgumentDefaultsHelpFormatter,
                           argparse.RawDescriptionHelpFormatter):
@@ -35,8 +57,8 @@ def parse_args():
           # Get submission date for all SRX accessions in the database, limited to 10
           python get-srx-date.py --use-db --limit 10
           
-          # Process 100k accessions in batches of 5000
-          python get-srx-date.py --use-db --batch-size 5000
+          # Process 100k accessions in batches of 2000 with 3 retries
+          python get-srx-date.py --use-db --batch-size 5000 --retries 3
         """
     )
     parser.add_argument(
@@ -63,18 +85,25 @@ def parse_args():
         "--tenant",
         type=str,
         choices=["test", "prod"],
-        help="Database tenant to use (optional)"
+        default="test",
+        help="Database tenant to use"
     )
     parser.add_argument(
         "--batch-size",
         type=int,
-        default=5000,
-        help="Number of accessions to process per BigQuery batch (default: 5000)"
+        default=2000,
+        help="Number of accessions to process per BigQuery batch"
+    )
+    parser.add_argument(
+        "--retries",
+        type=int,
+        default=3,
+        help="Number of retries for failed BigQuery or Entrez queries"
     )
     
     return parser.parse_args()
 
-def get_records(conn, limit: int = None) -> pd.DataFrame:
+def get_records(conn, limit: int = None) -> list[str]:
     """
     Get SRX metadata records that have tissue information but lack tissue_ontology_term_id.
     
@@ -99,13 +128,11 @@ def get_records(conn, limit: int = None) -> pd.DataFrame:
     
     return pd.read_sql(query, conn)['srx_accession'].tolist()
 
-def parse_sra_xml_dates(xml_content):
+def parse_sra_xml_dates(xml_content: str) -> dict:
     """
     Parse SRA XML content and extract all available dates.
-    
     Args:
         xml_content: XML content as string or bytes
-    
     Returns:
         dict: Dictionary containing all found dates
     """
@@ -165,7 +192,7 @@ def parse_sra_xml_dates(xml_content):
     
     return dates_info
 
-def find_earliest_date(dates_info):
+def find_earliest_date(dates_info: dict) -> dict:
     """
     Find the earliest date from all available dates.
     This is often the closest to the actual submission date.
@@ -205,33 +232,47 @@ def find_earliest_date(dates_info):
     
     return None
 
-def get_srx_submission_date_biopython(srx_accession):
+def get_srx_submission_date_biopython(srx_accession: str, retries: int = 3) -> str:
     """Get submission/run date using Biopython's Entrez module.
-    
     Attempts to extract the run_date from RUN element first,
     then falls back to submission_date from SUBMISSION element if available.
+    Args:
+        srx_accession: SRA experiment accession
+        retries: Number of retries for failed Entrez queries
+    Returns:
+        str: Release date in YYYY-MM-DD format
     """
-    # Search for the SRX accession
-    handle = Entrez.esearch(db="sra", term=srx_accession)
-    search_results = Entrez.read(handle)
-    handle.close()
+    @retry_with_backoff(retries)
+    def _fetch_with_retry(srx_accession):
+        # Search for the SRX accession
+        handle = Entrez.esearch(db="sra", term=srx_accession)
+        search_results = Entrez.read(handle)
+        handle.close()
+        
+        if not search_results['IdList']:
+            return None
+        
+        uid = search_results['IdList'][0]
+        
+        # Fetch detailed record
+        handle = Entrez.efetch(db="sra", id=uid, retmode="xml")
+        xml_data = handle.read()
+        handle.close()
+        
+        return xml_data
     
-    if not search_results['IdList']:
+    xml_data = _fetch_with_retry(srx_accession)
+    if xml_data is None:
         return None
-    
-    uid = search_results['IdList'][0]
-    
-    # Fetch detailed record
-    handle = Entrez.efetch(db="sra", id=uid, retmode="xml")
-    xml_data = handle.read()
-    handle.close()
 
     dates = parse_sra_xml_dates(xml_data)
-
     earliest_date = find_earliest_date(dates)
-    return earliest_date['parsed_datetime'].strftime('%Y-%m-%d')
+    
+    if earliest_date:
+        return earliest_date['parsed_datetime'].strftime('%Y-%m-%d')
+    return None
 
-def join_accs(accessions: List[str]) -> str:
+def join_accs(accessions: list[str]) -> str:
     """
     Join a list of accessions into a string.
     Args:
@@ -242,10 +283,11 @@ def join_accs(accessions: List[str]) -> str:
     return ', '.join([f"'{acc}'" for acc in accessions])
 
 def get_study_metadata(
-    experiment_accessions: Annotated[List[str], "A list of SRA study accession numbers (SRP)"],
+    experiment_accessions: list[str],
     client: bigquery.Client,
-    limit: Annotated[int, "The maximum number of records to return"] = 100,
-) -> Annotated[pd.DataFrame, "DataFrame of SRA study metadata"]:
+    limit: int = 100,
+    retries: int = 3,
+) -> pd.DataFrame:
     """
     Get study-level metadata for a list of SRA experimentaccessions.
     The metadata fields returned:
@@ -276,18 +318,21 @@ def get_study_metadata(
     GROUP BY sra_study, bioproject
     """
     
-    # Execute query and convert to DataFrame
-    query_job = client.query(query)
-    df = query_job.to_dataframe()
+    @retry_with_backoff(retries)
+    def _execute_query():
+        # Execute query and convert to DataFrame
+        query_job = client.query(query)
+        df = query_job.to_dataframe()
+        return df
     
-    return df
+    return _execute_query()
 
-def batch_list(lst, batch_size):
+def batch_list(lst: list[str], batch_size: int) -> list[list[str]]:
     """Yield successive batches from list."""
     for i in range(0, len(lst), batch_size):
         yield lst[i:i + batch_size]
 
-def main(args):
+def main(args: argparse.Namespace):
     # Set your email (required by NCBI)
     Entrez.email = os.getenv("EMAIL", "blank@gmail.com")
     Entrez.api_key = os.getenv("NCBI_API_KEY")
@@ -296,14 +341,19 @@ def main(args):
     if args.tenant:
         os.environ["DYNACONF"] = args.tenant
     if not os.getenv("DYNACONF"):
-        print("Warning: No tenant specified. Using the 'test' tenant", file=sys.stderr)
+        console.print("[yellow]Warning: No tenant specified. Using the 'test' tenant[/yellow]")
         os.environ["DYNACONF"] = "test"
+    if not args.tenant:
+        args.tenant = os.getenv("DYNACONF")
 
     # get the accessions
     if args.use_db:
-        with db_connect() as conn:
-            args.accessions = get_records(conn, limit=args.limit)
-
+        console.print(f"[yellow]Database tenant: {args.tenant}[/yellow]")
+        with console.status("[bold green]Getting accessions from the database...") as status:
+            with db_connect() as conn:
+                args.accessions = get_records(conn, limit=args.limit)
+        console.print(f"[cyan]Obtained {len(args.accessions)} accessions from the database[/cyan]")
+    
     # Initialize BigQuery client
     client = bigquery.Client()
     
@@ -312,6 +362,7 @@ def main(args):
     num_batches = (total_accessions + args.batch_size - 1) // args.batch_size
     
     console.print(f"[cyan]Processing {total_accessions} accessions in {num_batches} batches of {args.batch_size}[/cyan]")
+    console.print(f"[cyan]Retry attempts configured: {args.retries}[/cyan]")
     
     # Collect all batch results
     all_batch_results = []
@@ -331,7 +382,7 @@ def main(args):
             
             # Query BigQuery for this batch
             try:
-                df_batch = get_study_metadata(batch, client=client)
+                df_batch = get_study_metadata(batch, client=client, retries=args.retries)
                 all_batch_results.append(df_batch)
             except Exception as e:
                 console.print(f"[red]Error processing batch {batch_idx + 1}: {e}[/red]")
@@ -377,7 +428,7 @@ def main(args):
             task = progress.add_task("Running entrez queries on remaining accessions...", total=len(acc_no_date))
             for accession in acc_no_date:
                 try:
-                    date = get_srx_submission_date_biopython(accession)
+                    date = get_srx_submission_date_biopython(accession, retries=args.retries)
                     results['srx_accession'].append(accession)
                     results['release_date'].append(date)
                 except Exception as e:
@@ -394,20 +445,31 @@ def main(args):
             columns=['sra_study', 'bioproject', 'latest_release_date']
         ).rename(columns={'earliest_release_date': 'release_date', 'experiments': 'srx_accession'})
     else:
-        df_bq_dates = pd.DataFrame()
+        # if no results, create an empty dataframe
+        df_bq_dates = pd.DataFrame(columns=['srx_accession', 'release_date'])
     
     # Ensure consistent dtypes before concatenation
     df_entrez = pd.DataFrame(results)
-    if not df_entrez.empty:
-        df_entrez['release_date'] = pd.to_datetime(df_entrez['release_date'])
-    if not df_bq_dates.empty:
-        df_bq_dates['release_date'] = pd.to_datetime(df_bq_dates['release_date'])
+    ## if no results, create an empty dataframe
+    if df_entrez.empty:
+        df_entrez = pd.DataFrame(columns=['srx_accession', 'release_date'])
+    
+    # Convert dates to datetime
+    for df in [df_bq_dates, df_entrez]:
+        if not df.empty:
+            df['release_date'] = pd.to_datetime(df['release_date'])
     
     # concatenate the results
     df_results = pd.concat([df_bq_dates, df_entrez], ignore_index=True)
 
     # convert release_date to YYYY-MM-DD
-    df_results['release_date'] = pd.to_datetime(df_results['release_date']).dt.strftime('%Y-%m-%d')
+    df_results['release_date'] = df_results['release_date'].dt.strftime('%Y-%m-%d')
+
+    # filter out records not in args.accessions
+    df_results = df_results[df_results['srx_accession'].isin(args.accessions)].sort_values(by='release_date')
+
+    # for duplicate srx_accession, keep the earliest release_date
+    df_results = df_results.drop_duplicates(subset='srx_accession', keep='first')
 
     # save the results
     pd.DataFrame(df_results).to_csv(args.output, index=False)

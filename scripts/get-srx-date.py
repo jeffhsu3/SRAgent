@@ -4,9 +4,11 @@ import sys
 import argparse
 import time
 from datetime import datetime
-from Bio import Entrez
-import pandas as pd
+from typing import Annotated, List
 import xml.etree.ElementTree as ET
+from Bio import Entrez
+from google.cloud import bigquery
+import pandas as pd
 from SRAgent.db.connect import db_connect
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn, TimeRemainingColumn
 from rich.console import Console
@@ -20,7 +22,7 @@ def parse_args():
                           argparse.RawDescriptionHelpFormatter):
         pass
     parser = argparse.ArgumentParser(
-        description="Obtain the submission dates of SRX/ERX accessions",
+        description="Obtain the release dates for SRA experiment accessions",
         formatter_class=CustomFormatter,
         epilog="""
         Examples:
@@ -32,6 +34,9 @@ def parse_args():
 
           # Get submission date for all SRX accessions in the database, limited to 10
           python get-srx-date.py --use-db --limit 10
+          
+          # Process 100k accessions in batches of 5000
+          python get-srx-date.py --use-db --batch-size 5000
         """
     )
     parser.add_argument(
@@ -59,6 +64,12 @@ def parse_args():
         type=str,
         choices=["test", "prod"],
         help="Database tenant to use (optional)"
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=5000,
+        help="Number of accessions to process per BigQuery batch (default: 5000)"
     )
     
     return parser.parse_args()
@@ -220,6 +231,62 @@ def get_srx_submission_date_biopython(srx_accession):
     earliest_date = find_earliest_date(dates)
     return earliest_date['parsed_datetime'].strftime('%Y-%m-%d')
 
+def join_accs(accessions: List[str]) -> str:
+    """
+    Join a list of accessions into a string.
+    Args:
+        accessions: list of accessions
+    Returns:
+        str: comma separated string of accessions
+    """
+    return ', '.join([f"'{acc}'" for acc in accessions])
+
+def get_study_metadata(
+    experiment_accessions: Annotated[List[str], "A list of SRA study accession numbers (SRP)"],
+    client: bigquery.Client,
+    limit: Annotated[int, "The maximum number of records to return"] = 100,
+) -> Annotated[pd.DataFrame, "DataFrame of SRA study metadata"]:
+    """
+    Get study-level metadata for a list of SRA experimentaccessions.
+    The metadata fields returned:
+    - sra_study: SRA study accession (the query accession)
+    - bioproject: BioProject accession (parent of study)
+    - experiments: Comma-separated list of associated experiment accessions (SRX)
+    - earliest_release_date: Earliest release date among experiments in the study
+    - latest_release_date: Latest release date among experiments in the study
+    """
+    query = f"""
+    WITH distinct_values AS (
+        SELECT DISTINCT
+            m.sra_study,
+            m.bioproject,
+            m.experiment,
+            m.releasedate
+        FROM `nih-sra-datastore.sra.metadata` as m
+        WHERE m.experiment IN ({join_accs(experiment_accessions)})
+        LIMIT {limit}
+    )
+    SELECT 
+        sra_study,
+        bioproject,
+        STRING_AGG(experiment, ',') as experiments,
+        MIN(releasedate) as earliest_release_date,
+        MAX(releasedate) as latest_release_date
+    FROM distinct_values
+    GROUP BY sra_study, bioproject
+    """
+    
+    # Execute query and convert to DataFrame
+    query_job = client.query(query)
+    df = query_job.to_dataframe()
+    
+    return df
+
+def batch_list(lst, batch_size):
+    """Yield successive batches from list."""
+    for i in range(0, len(lst), batch_size):
+        yield lst[i:i + batch_size]
+
 def main(args):
     # Set your email (required by NCBI)
     Entrez.email = os.getenv("EMAIL", "blank@gmail.com")
@@ -237,7 +304,18 @@ def main(args):
         with db_connect() as conn:
             args.accessions = get_records(conn, limit=args.limit)
 
-    results = {'srx_accession': [], 'date': []}
+    # Initialize BigQuery client
+    client = bigquery.Client()
+    
+    # Process accessions in batches
+    total_accessions = len(args.accessions)
+    num_batches = (total_accessions + args.batch_size - 1) // args.batch_size
+    
+    console.print(f"[cyan]Processing {total_accessions} accessions in {num_batches} batches of {args.batch_size}[/cyan]")
+    
+    # Collect all batch results
+    all_batch_results = []
+    
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
@@ -246,21 +324,98 @@ def main(args):
         TimeRemainingColumn(),
         console=console,
     ) as progress:
-        task = progress.add_task("Processing accessions", total=len(args.accessions))
-        for accession in args.accessions:
-            date = get_srx_submission_date_biopython(accession)
-            results['srx_accession'].append(accession)
-            results['date'].append(date)
-            progress.update(task, completed=len(results['srx_accession']))
-            time.sleep(0.33)
+        batch_task = progress.add_task("Processing BigQuery batches...", total=num_batches)
+        
+        for batch_idx, batch in enumerate(batch_list(args.accessions, args.batch_size)):
+            progress.update(batch_task, description=f"Processing batch {batch_idx + 1}/{num_batches}")
+            
+            # Query BigQuery for this batch
+            try:
+                df_batch = get_study_metadata(batch, client=client)
+                all_batch_results.append(df_batch)
+            except Exception as e:
+                console.print(f"[red]Error processing batch {batch_idx + 1}: {e}[/red]")
+                continue
+            
+            progress.update(batch_task, advance=1)
+    
+    # Combine all batch results
+    if all_batch_results:
+        df_bq = pd.concat(all_batch_results, ignore_index=True)
+        console.print(f"[green]Successfully processed {len(all_batch_results)} batches[/green]")
+    else:
+        console.print("[red]No successful batch queries[/red]")
+        df_bq = pd.DataFrame()
+    
+    ## explode comma separated experiments
+    if not df_bq.empty:
+        df_bq['experiments'] = df_bq['experiments'].str.split(',')
+        df_bq = df_bq.explode('experiments')
+
+        ## filter to only the accessions that lack a date
+        df_bq_no_date = df_bq[df_bq['earliest_release_date'].isna()]
+        ## find accession not in the bigquery results
+        acc_no_date = df_bq_no_date['experiments'].tolist()
+        acc_no_date += list(set(args.accessions) - set(df_bq['experiments'].tolist()))
+    else:
+        acc_no_date = args.accessions
+
+    ## status on the number of accessions
+    console.print(f"[yellow]Accessions lacking dates: {len(acc_no_date)}[/yellow]")
+
+    # run the entrez queries
+    results = {'srx_accession': [], 'release_date': []}
+    if acc_no_date:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            TimeRemainingColumn(),
+            console=console,
+        ) as progress:
+            task = progress.add_task("Running entrez queries on remaining accessions...", total=len(acc_no_date))
+            for accession in acc_no_date:
+                try:
+                    date = get_srx_submission_date_biopython(accession)
+                    results['srx_accession'].append(accession)
+                    results['release_date'].append(date)
+                except Exception as e:
+                    console.print(f"[red]Error processing {accession}: {e}[/red]")
+                    results['srx_accession'].append(accession)
+                    results['release_date'].append(None)
+                
+                progress.update(task, completed=len(results['srx_accession']))
+                time.sleep(0.33)
+
+    # combine the results
+    if not df_bq.empty:
+        df_bq_dates = df_bq[~df_bq['earliest_release_date'].isna()].drop(
+            columns=['sra_study', 'bioproject', 'latest_release_date']
+        ).rename(columns={'earliest_release_date': 'release_date', 'experiments': 'srx_accession'})
+    else:
+        df_bq_dates = pd.DataFrame()
+    
+    # Ensure consistent dtypes before concatenation
+    df_entrez = pd.DataFrame(results)
+    if not df_entrez.empty:
+        df_entrez['release_date'] = pd.to_datetime(df_entrez['release_date'])
+    if not df_bq_dates.empty:
+        df_bq_dates['release_date'] = pd.to_datetime(df_bq_dates['release_date'])
+    
+    # concatenate the results
+    df_results = pd.concat([df_bq_dates, df_entrez], ignore_index=True)
+
+    # convert release_date to YYYY-MM-DD
+    df_results['release_date'] = pd.to_datetime(df_results['release_date']).dt.strftime('%Y-%m-%d')
 
     # save the results
-    pd.DataFrame(results).to_csv(args.output, index=False)
+    pd.DataFrame(df_results).to_csv(args.output, index=False)
     console.print(f"[green]Results saved to {args.output}[/green]")
+    console.print(f"[cyan]Total records processed: {len(df_results)}[/cyan]")
 
 if __name__ == "__main__":
     from dotenv import load_dotenv
     load_dotenv(override=True)
     args = parse_args()
     main(args)
-

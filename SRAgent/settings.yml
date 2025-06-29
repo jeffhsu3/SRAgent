@@ -28,6 +28,8 @@ test:
     find_datasets: "gpt-4.1-mini"
     step_summary: "gpt-4.1-mini"
     get_entrez_ids: "gpt-4.1-mini"
+    gemini_default: "gemini-pro" # Added for flexibility
+    gemini_test_agent: "gemini-pro" # For testing specific gemini loading
   temperature:
     default: 0.1
     esearch: 0.1
@@ -70,6 +72,7 @@ test:
     get_entrez_ids: "low"
   service_tier:
     default: "flex"
+    gemini_test_agent: "default" # Gemini doesn't use flex
     esearch: "default"
     esummary: "default"
     elink: "default"
@@ -111,6 +114,7 @@ prod:
     find_datasets: "gpt-4.1-mini"
     step_summary: "gpt-4.1-mini"
     get_entrez_ids: "gpt-4.1-mini"
+    gemini_default: "gemini-pro" # Added for flexibility
   temperature:
     default: 0.1
     esearch: 0.1
@@ -197,4 +201,38 @@ claude:
     find_datasets: "medium"
     step_summary: ""
   service_tier:
+    default: "default"
+
+gemini:
+  db_name: "sragent-test" # Assuming similar DB needs as test for now
+  models:
+    default: "gemini-pro" # Or other appropriate Gemini model
+    esearch: "gemini-pro"
+    esummary: "gemini-pro"
+    elink: "gemini-pro"
+    efetch: "gemini-pro"
+    sequences: "gemini-pro"
+    ncbi_fetch: "gemini-pro"
+    bigquery: "gemini-pro"
+    entrez: "gemini-pro"
+    sragent: "gemini-pro"
+    tissue_ontology: "gemini-pro"
+    metadata: "gemini-pro" # Or a more capable version if needed
+    metadata_router: "gemini-pro"
+    convert_router: "gemini-pro"
+    accessions: "gemini-pro"
+    entrez_convert: "gemini-pro"
+    find_datasets: "gemini-pro"
+    step_summary: "gemini-pro"
+    get_entrez_ids: "gemini-pro"
+  temperature:
+    default: 0.1 # Adjust as needed for Gemini models
+    # Add specific temperatures if Gemini models behave differently
+  reasoning_effort: # Gemini models might not use this, or use it differently. Adjust as needed.
+    default: "low"
+    sragent: "medium"
+    tissue_ontology: "medium"
+    metadata: "medium"
+    metadata_router: "medium"
+  service_tier: # Gemini might not have service tiers like OpenAI. Defaulting.
     default: "default"

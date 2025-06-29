@@ -7,6 +7,7 @@ from importlib import resources
 from typing import Dict, Any, Optional
 from langchain_openai import ChatOpenAI
 from langchain_anthropic import ChatAnthropic
+from langchain_google_genai import ChatGoogleGenerativeAI
 from dynaconf import Dynaconf
 import openai
 
@@ -30,7 +31,7 @@ def load_settings() -> Dict[str, Any]:
     settings = Dynaconf(
         settings_files=[s_path], 
         environments=True, 
-        env_switcher="DYNACONF"
+        env_switcher="DYNACONF_ENV" # Ensure this matches project settings
     )
     return settings
 
@@ -271,6 +272,31 @@ def set_model(
             service_tier=service_tier,
             timeout=timeout if service_tier == "flex" else None
         )
+    elif model_name.startswith("gemini"):
+        # Assuming Gemini models take temperature and max_tokens.
+        # Reasoning effort and service tier might not be applicable or handled differently.
+        # This may need adjustment based on actual Gemini API and Langchain integration.
+        if temperature is None:
+            # Fallback to a default temperature if not specified, or raise error
+            # For now, let's assume a default or that it's handled by the ChatGoogleGenerativeAI class
+            pass
+
+        # Explicitly get temperature for this agent for Gemini, allow None
+        gemini_temp = None
+        try:
+            gemini_temp = settings["temperature"][agent_name]
+        except KeyError:
+            try:
+                gemini_temp = settings["temperature"]["default"]
+            except KeyError:
+                pass # gemini_temp remains None, ChatGoogleGenerativeAI will use its default
+
+        model = ChatGoogleGenerativeAI(
+            model=model_name, # Langchain uses 'model' not 'model_name' for Google
+            temperature=gemini_temp, # Pass the resolved temp, or None
+            max_output_tokens=max_tokens, # Langchain uses 'max_output_tokens'
+            # top_p, top_k can also be configured if needed
+        )
     else:
         raise ValueError(f"Model {model_name} not supported")
 
@@ -286,6 +312,63 @@ if __name__ == "__main__":
     settings = load_settings()
     print(settings)
 
-    # set model
-    model = set_model(model_name="claude-sonnet-4-latest", agent_name="default")
-    print(model)
+    # Ensure a consistent testing environment for model loading
+    original_dynaconf_env = os.environ.get("DYNACONF_ENV")
+    os.environ["DYNACONF_ENV"] = "test"
+    print(f"Set DYNACONF_ENV to 'test' for utils.py main execution.")
+
+    settings = load_settings() # Load settings once with DYNACONF_ENV="test"
+    print("Loaded settings for 'test' environment:")
+    print(settings.as_dict()) # Print loaded settings for debugging
+
+    # Original test model
+    # model = set_model(model_name="claude-sonnet-4-latest", agent_name="default")
+    # print(model)
+
+    print("\\n--- Testing Gemini Model Loading ---")
+
+    # Test 1: Explicitly set model_name to "gemini-pro" using 'default' agent settings from "test" env, but override service_tier
+    print("\\n1. Testing explicit model_name='gemini-pro', agent_name='default', service_tier='default'")
+    try:
+        gemini_model_explicit = set_model(model_name="gemini-pro", agent_name="default", service_tier="default")
+        print(f"  Success: {gemini_model_explicit}")
+    except Exception as e:
+        print(f"  Error: {e}")
+
+    # Test 2: Use an agent_name configured in settings.yml to use a gemini model.
+    # We added 'gemini_test_agent: "gemini-pro"' under 'test.models' in settings.yml
+    # We need to ensure the 'test' environment is active for this.
+    current_dynaconf_env = os.environ.get("DYNACONF_ENV")
+    os.environ["DYNACONF_ENV"] = "test"
+    print(f"\\n2. Testing agent_name='gemini_test_agent' (should resolve to 'gemini-pro' in 'test' env)")
+    try:
+        # load_settings() is called inside set_model and will pick up DYNACONF_ENV="test"
+        gemini_model_from_settings = set_model(agent_name="gemini_test_agent")
+        print(f"  Success: {gemini_model_from_settings}")
+        # Verify it's a Gemini model (optional, depends on __str__ output)
+        if "ChatGoogleGenerativeAI" not in str(gemini_model_from_settings):
+             print(f"  Warning: Loaded model might not be a Gemini model: {gemini_model_from_settings}")
+    except ValueError as ve:
+        # Catching ValueError specifically if the model name isn't found or supported.
+        print(f"  Error (ValueError): {ve}")
+        print(f"  Debug: Check if 'gemini_test_agent' is defined in 'settings.yml' under 'test.models'.")
+        # settings = load_settings() # To see current settings if debugging
+        # print(f"  Current settings for test.models: {settings.get('models')}")
+    except Exception as e:
+        print(f"  Error (Other): {e}")
+    finally:
+        # Restore original DYNACONF_ENV
+        if current_dynaconf_env is None:
+            del os.environ["DYNACONF_ENV"]
+        else:
+            os.environ["DYNACONF_ENV"] = current_dynaconf_env # This was for test 2
+
+    print("\\n--- End of Gemini Model Loading Tests ---")
+
+    # Restore original DYNACONF_ENV for the whole main block
+    if original_dynaconf_env is None:
+        if "DYNACONF_ENV" in os.environ: # Check if it was set by us
+            del os.environ["DYNACONF_ENV"]
+    else:
+        os.environ["DYNACONF_ENV"] = original_dynaconf_env
+    print(f"Restored DYNACONF_ENV to: {os.environ.get('DYNACONF_ENV')}")

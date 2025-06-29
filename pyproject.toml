@@ -24,7 +24,7 @@ dependencies = [
     "openai~=1.82.1",
     "langchain_openai~=0.3.18",
     "langchain_anthropic~=0.3.14",
-    "langgraph~=0.4.7",
+    "langgraph",
     "biopython~=1.84",
     "xmltodict>=0.14.2",
     "beautifulsoup4>=4.12.3",
@@ -40,7 +40,7 @@ dependencies = [
     "obonet~=1.1.0",
     "protobuf~=5.29.4",
     "appdirs~=1.4.4",
-    "rich~=14.0.0"
+    "rich"
 ]
 
 [project.optional-dependencies]

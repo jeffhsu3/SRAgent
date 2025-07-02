@@ -4,6 +4,7 @@ import os
 import sys
 import asyncio
 import argparse
+import pandas as pd
 from typing import List, Optional, Callable
 ## 3rd party
 from Bio import Entrez
@@ -24,7 +25,7 @@ def SRX_info_agent_parser(subparsers):
     )
     sub_parser.set_defaults(func=SRX_info_agent_main)
     sub_parser.add_argument(
-        'entrez_ids', type=str, nargs='+', help='>=1 dataset Entrez IDs to query'
+        'entrez_ids', type=str, nargs='+', help='>=1 dataset Entrez IDs to query (or a csv file with a column named "entrez_id")'
     )    
     sub_parser.add_argument(
         '--database', type=str, default='sra', choices=['gds', 'sra'], 
@@ -98,7 +99,7 @@ async def _SRX_info_agent_main(args):
     Main function for invoking the srx-info agent
     """
     # filter entrez_ids
-    if args.use_database:
+    if args.use_database and not args.reprocess_existing:
         existing_ids = set()
         with db_connect() as conn:
             existing_ids = set(db_get_srx_records(conn))
@@ -152,6 +153,15 @@ def SRX_info_agent_main(args):
     # set tenant
     if args.tenant:
         os.environ["DYNACONF"] = args.tenant
+
+    # if entrez_ids is a csv, read in the entrez_ids
+    if args.entrez_ids[0].endswith(".csv") and os.path.exists(args.entrez_ids[0]):
+        df = pd.read_csv(args.entrez_ids[0])
+        if "entrez_id" not in df.columns:
+            print("'entrez_id' column not found in the csv file", file=sys.stderr)
+            return 1
+        args.entrez_ids = df["entrez_id"].unique().astype(str).tolist()
+        
     # filter to non-integer entrez_ids
     problem_entrez_ids = [x for x in args.entrez_ids if not x.isnumeric()]
     if problem_entrez_ids:

@@ -91,7 +91,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--batch-size",
         type=int,
-        default=2000,
+        default=50,
         help="Number of accessions to process per BigQuery batch"
     )
     parser.add_argument(
@@ -323,6 +323,8 @@ def get_study_metadata(
         # Execute query and convert to DataFrame
         query_job = client.query(query)
         df = query_job.to_dataframe()
+        if df.empty:
+            console.print(f"[red]No bigquery results found...[/red]")
         return df
     
     return _execute_query()
@@ -384,6 +386,7 @@ def main(args: argparse.Namespace):
             try:
                 df_batch = get_study_metadata(batch, client=client, retries=args.retries)
                 all_batch_results.append(df_batch)
+                time.sleep(0.5)
             except Exception as e:
                 console.print(f"[red]Error processing batch {batch_idx + 1}: {e}[/red]")
                 continue
@@ -457,13 +460,15 @@ def main(args: argparse.Namespace):
     # Convert dates to datetime
     for df in [df_bq_dates, df_entrez]:
         if not df.empty:
-            df['release_date'] = pd.to_datetime(df['release_date'])
+            df['release_date'] = pd.to_datetime(df['release_date'], errors='coerce')
     
     # concatenate the results
     df_results = pd.concat([df_bq_dates, df_entrez], ignore_index=True)
 
-    # convert release_date to YYYY-MM-DD
-    df_results['release_date'] = df_results['release_date'].dt.strftime('%Y-%m-%d')
+    # convert release_date to YYYY-MM-DD, handling NA values
+    df_results['release_date'] = df_results['release_date'].apply(
+        lambda x: x.strftime('%Y-%m-%d') if pd.notnull(x) else None
+    )
 
     # filter out records not in args.accessions
     df_results = df_results[df_results['srx_accession'].isin(args.accessions)].sort_values(by='release_date')
@@ -472,7 +477,10 @@ def main(args: argparse.Namespace):
     df_results = df_results.drop_duplicates(subset='srx_accession', keep='first')
 
     # save the results
-    pd.DataFrame(df_results).to_csv(args.output, index=False)
+    outdir = os.path.dirname(args.output)
+    if outdir:
+        os.makedirs(outdir, exist_ok=True)
+    df_results.to_csv(args.output, index=False)
     console.print(f"[green]Results saved to {args.output}[/green]")
     console.print(f"[cyan]Total records processed: {len(df_results)}[/cyan]")
 

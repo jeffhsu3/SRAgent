@@ -51,7 +51,7 @@ def SRX_info_agent_parser(subparsers):
     )
     sub_parser.add_argument(
         '--reprocess-existing', action='store_true', default=False, 
-        help='Reprocess existing Entrez IDs in the SRAgent database instead of re-processing them (assumning --use-database)'
+        help='Reprocess existing Entrez IDs in the SRAgent database instead of ignoring existing (assumning --use-database)'
     )
 
 async def _process_single_entrez_id(

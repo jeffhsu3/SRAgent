@@ -70,7 +70,7 @@ def find_datasets_parser(subparsers):
     )
     sub_parser.add_argument(
         '--reprocess-existing', action='store_true', default=False, 
-        help='Reprocess existing Entrez IDs in the scBaseCount database instead of re-processing them (assumning --use-database)'
+        help='Reprocess existing Entrez IDs in the scBaseCount database instead of ignoring existing (assumning --use-database)'
     )  
 
 async def _find_datasets_main(args):

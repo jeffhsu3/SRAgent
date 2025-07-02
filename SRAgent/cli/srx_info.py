@@ -11,6 +11,7 @@ from Bio import Entrez
 ## package
 from SRAgent.cli.utils import CustomFormatter
 from SRAgent.workflows.srx_info import create_SRX_info_graph
+from SRAgent.workflows.graph_utils import handle_write_graph_option
 from SRAgent.agents.display import create_step_summary_chain
 from SRAgent.db.connect import db_connect 
 from SRAgent.db.get import db_get_srx_records
@@ -53,6 +54,10 @@ def SRX_info_agent_parser(subparsers):
     sub_parser.add_argument(
         '--reprocess-existing', action='store_true', default=False, 
         help='Reprocess existing Entrez IDs in the SRAgent database instead of ignoring existing (assumning --use-database)'
+    )
+    sub_parser.add_argument(
+        '--write-graph', type=str, metavar='FILE', default=None,
+        help='Write the workflow graph to a file and exit (supports .png, .svg, .pdf, .mermaid formats)'
     )
 
 async def _process_single_entrez_id(
@@ -153,6 +158,11 @@ def SRX_info_agent_main(args):
     # set tenant
     if args.tenant:
         os.environ["DYNACONF"] = args.tenant
+    
+    # handle write-graph option
+    if args.write_graph:
+        handle_write_graph_option(create_SRX_info_graph, args.write_graph)
+        return
 
     # if entrez_ids is a csv, read in the entrez_ids
     if args.entrez_ids[0].endswith(".csv") and os.path.exists(args.entrez_ids[0]):

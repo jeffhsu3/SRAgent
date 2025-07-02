@@ -12,6 +12,7 @@ from langchain_core.messages import HumanMessage
 ## package
 from SRAgent.cli.utils import CustomFormatter
 from SRAgent.workflows.metadata import get_metadata_items, create_metadata_graph
+from SRAgent.workflows.graph_utils import handle_write_graph_option
 from SRAgent.agents.display import create_step_summary_chain
 
 # functions
@@ -52,6 +53,10 @@ def metadata_agent_parser(subparsers):
         '--tenant', type=str, default='prod',
         choices=['prod', 'test'],
         help='Tenant name for the SRAgent SQL database'
+    )
+    sub_parser.add_argument(
+        '--write-graph', type=str, metavar='FILE', default=None,
+        help='Write the workflow graph to a file and exit (supports .png, .svg, .pdf, .mermaid formats)'
     )
 
 
@@ -107,6 +112,11 @@ async def _metadata_agent_main(args):
     # set email and api key
     Entrez.email = os.getenv("EMAIL")
     Entrez.api_key = os.getenv("NCBI_API_KEY")
+    
+    # handle write-graph option
+    if args.write_graph:
+        handle_write_graph_option(create_metadata_graph, args.write_graph)
+        return
 
     # create supervisor agent
     graph = create_metadata_graph()

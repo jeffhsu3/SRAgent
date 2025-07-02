@@ -12,6 +12,7 @@ from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 ## package
 from SRAgent.cli.utils import CustomFormatter
 from SRAgent.workflows.find_datasets import create_find_datasets_graph
+from SRAgent.workflows.graph_utils import handle_write_graph_option
 from SRAgent.agents.display import create_step_summary_chain
 from SRAgent.tools.utils import set_entrez_access
 from SRAgent.organisms import OrganismEnum
@@ -71,6 +72,10 @@ def find_datasets_parser(subparsers):
     sub_parser.add_argument(
         '--reprocess-existing', action='store_true', default=False, 
         help='Reprocess existing Entrez IDs in the scBaseCount database instead of ignoring existing (assumning --use-database)'
+    )
+    sub_parser.add_argument(
+        '--write-graph', type=str, metavar='FILE', default=None,
+        help='Write the workflow graph to a file and exit (supports .png, .svg, .pdf, .mermaid formats)'
     )  
 
 async def _find_datasets_main(args):
@@ -84,8 +89,14 @@ async def _find_datasets_main(args):
     # set email and api key
     set_entrez_access()
     
+    # handle write-graph option
+    if args.write_graph:
+        handle_write_graph_option(create_find_datasets_graph, args.write_graph)
+        return
+    
     # create supervisor agent
     graph = create_find_datasets_graph()
+    
     if not args.no_summaries:
         step_summary_chain = create_step_summary_chain()
 

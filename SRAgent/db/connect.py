@@ -22,10 +22,13 @@ def db_connect() -> connection:
     # get settings
     if not os.getenv("DYNACONF"):
         os.environ["DYNACONF"] = "prod"
-    s_path = str(resources.files("SRAgent").joinpath("settings.yml"))
+    package_path = os.path.dirname(os.path.abspath(__file__))
+    s_path1 = os.path.join(os.path.dirname(package_path), "settings.yml")
+    s_path2 = str(resources.files("SRAgent").joinpath("settings.yml"))
     settings = Dynaconf(
-        settings_files=["settings.yml", s_path], 
-        environments=True, 
+        settings_files=["settings.yml", s_path1, s_path2], 
+        environments=True,
+        merge_enabled=True,
         env_switcher="DYNACONF"
     )
 

@@ -158,7 +158,7 @@ def create_screcounter_star_results(conn: connection) -> None:
             Column("median_gene_per_cell", "FLOAT"),
             Column("median_umi_per_cell", "FLOAT"),
             Column("median_feature_per_cell", "FLOAT"),
-            Column("number_of_reads", "INT"),
+            Column("number_of_reads", "BIGINT"),
             Column("median_reads_per_cell", "FLOAT"),
             Column("q30_bases_in_cb_umi", "FLOAT"),
             Column("q30_bases_in_rna_read", "FLOAT"),

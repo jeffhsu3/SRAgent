@@ -63,7 +63,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--accessions", type=str, nargs="+", default=None,
-        help="SRX accessions to use"
+        help="SRX accessions to use; can be a CSV file with a 'srx_accession' column"
     )
     parser.add_argument(
         "--use-db", action="store_true", default=False,
@@ -100,7 +100,6 @@ def parse_args() -> argparse.Namespace:
         default=3,
         help="Number of retries for failed BigQuery or Entrez queries"
     )
-    
     return parser.parse_args()
 
 def get_records(conn, limit: int = None) -> list[str]:
@@ -355,6 +354,11 @@ def main(args: argparse.Namespace):
             with db_connect() as conn:
                 args.accessions = get_records(conn, limit=args.limit)
         console.print(f"[cyan]Obtained {len(args.accessions)} accessions from the database[/cyan]")
+    elif len(args.accessions) == 1 and os.path.exists(args.accessions[0]):
+        console.print(f"[yellow]Reading accessions from {args.accessions[0]}[/yellow]")
+        args.accessions = pd.read_csv(args.accessions[0])['srx_accession'].tolist()
+    else:
+        console.print(f"[yellow]Using {len(args.accessions)} accessions from command line[/yellow]")
     
     # Initialize BigQuery client
     client = bigquery.Client()

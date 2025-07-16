@@ -44,21 +44,24 @@ def parse_args() -> argparse.Namespace:
                           argparse.RawDescriptionHelpFormatter):
         pass
     parser = argparse.ArgumentParser(
-        description="Obtain the release dates for SRA experiment accessions",
+        description="Obtain the organism information for SRA experiment accessions",
         formatter_class=CustomFormatter,
         epilog="""
         Examples:
-          # Get submission date for SRX1234567 and ERX11876752
-          python get-srx-release-date.py --accessions SRX1234567 ERX11876752
+          # Get organism for SRX1234567 and ERX11876752
+          python get-srx-organism.py --accessions SRX1234567 ERX11876752
 
-          # Get submission date for all SRX accessions in the database
-          python get-srx-release-date.py --use-db
+          # Get organism for filtered SRX accessions in the database
+          python get-srx-organism.py --use-db
 
-          # Get submission date for all SRX accessions in the database, limited to 10
-          python get-srx-release-date.py --use-db --limit 10
+          # Get organism for ALL SRX accessions in the database (not just filtered)
+          python get-srx-organism.py --use-db --all-accessions
+
+          # Get organism for all SRX accessions in the database, limited to 10
+          python get-srx-organism.py --use-db --limit 10
           
           # Process 100k accessions in batches of 2000 with 3 retries
-          python get-srx-release-date.py --use-db --batch-size 5000 --retries 3
+          python get-srx-organism.py --use-db --batch-size 5000 --retries 3
         """
     )
     parser.add_argument(
@@ -72,7 +75,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output",
         type=str,
-        default="srx_dates.csv",
+        default="srx_organisms.csv",
         help="Output file name"
     )
     parser.add_argument(
@@ -95,6 +98,18 @@ def parse_args() -> argparse.Namespace:
         help="Number of accessions to process per BigQuery batch"
     )
     parser.add_argument(
+        "--all-accessions",
+        default=False,
+        action="store_true",
+        help="Process all accessions, not just the ones with tissue information"
+    )
+    parser.add_argument(
+        "--just-star-results",
+        default=False,
+        action="store_true",
+        help="Process only the accessions that have STAR results"
+    )
+    parser.add_argument(
         "--retries",
         type=int,
         default=3,
@@ -102,38 +117,64 @@ def parse_args() -> argparse.Namespace:
     )
     return parser.parse_args()
 
-def get_records(conn, limit: int = None) -> list[str]:
+def get_records(conn, limit: int = None, all_accessions: bool = False, just_star_results: bool = False) -> list[str]:
     """
-    Get SRX metadata records that have tissue information but lack tissue_ontology_term_id.
+    Get SRX metadata records.
     
     Args:
         conn: Database connection
         limit: Maximum number of records to return (optional)
+        all_accessions: If True, get all accessions; if False, only get filtered ones
     Returns:
         DataFrame with records
     """
-    query = """
-    SELECT DISTINCT srx_accession
-    FROM srx_metadata
-    INNER JOIN screcounter_star_results ON srx_metadata.srx_accession = screcounter_star_results.sample
-    AND is_illumina = 'yes'
-    AND is_single_cell = 'yes'
-    AND is_paired_end = 'yes'
-    AND lib_prep = '10x_Genomics'
-    """
-    
+    if all_accessions:
+        if just_star_results:
+            query = """
+            SELECT DISTINCT srx_accession
+            FROM srx_metadata
+            INNER JOIN screcounter_star_results ON srx_metadata.srx_accession = screcounter_star_results.sample
+            AND is_illumina = 'yes'
+            AND is_single_cell = 'yes'
+            AND is_paired_end = 'yes'
+            AND lib_prep = '10x_Genomics'
+            """
+        else:
+            query = """
+            SELECT DISTINCT srx_accession
+            FROM srx_metadata
+            WHERE srx_accession IS NOT NULL
+            """
+    else:
+        if just_star_results:
+            query = """
+            SELECT DISTINCT srx_accession
+            FROM srx_metadata
+            INNER JOIN screcounter_star_results ON srx_metadata.srx_accession = screcounter_star_results.sample
+            AND is_illumina = 'yes'
+            AND is_single_cell = 'yes'
+            AND is_paired_end = 'yes'
+            AND lib_prep = '10x_Genomics'
+            WHERE srx_accession IS NOT NULL
+            """
+        else:
+            query = """
+            SELECT DISTINCT srx_accession
+            FROM srx_metadata
+            WHERE srx_accession IS NOT NULL
+            """
     if limit:
         query += f" LIMIT {limit}"
     
     return pd.read_sql(query, conn)['srx_accession'].tolist()
 
-def parse_sra_xml_dates(xml_content: str) -> dict:
+def parse_sra_xml_organism(xml_content: str) -> dict:
     """
-    Parse SRA XML content and extract all available dates.
+    Parse SRA XML content and extract organism information.
     Args:
         xml_content: XML content as string or bytes
     Returns:
-        dict: Dictionary containing all found dates
+        dict: Dictionary containing organism information
     """
     
     # Handle bytes input
@@ -143,103 +184,55 @@ def parse_sra_xml_dates(xml_content: str) -> dict:
     # Parse the XML
     root = ET.fromstring(xml_content)
     
-    dates_info = {}
+    organism_info = {}
     
     # Extract experiment accession for reference
     experiment = root.find('.//EXPERIMENT')
     if experiment is not None:
-        dates_info['experiment_accession'] = experiment.get('accession', 'Unknown')
+        organism_info['experiment_accession'] = experiment.get('accession', 'Unknown')
     
-    # Extract submission information (though submission_date might not be present)
-    submission = root.find('.//SUBMISSION')
-    if submission is not None:
-        dates_info['submission_accession'] = submission.get('accession', 'Unknown')
-        dates_info['submission_broker'] = submission.get('broker_name', 'Unknown')
-        # Check if submission_date exists (it might not always be present)
-        if 'submission_date' in submission.attrib:
-            dates_info['submission_date'] = submission.get('submission_date')
-        else:
-            dates_info['submission_date'] = 'Not available in XML'
+    # Extract organism information from SAMPLE
+    sample = root.find('.//SAMPLE')
+    if sample is not None:
+        organism_info['sample_accession'] = sample.get('accession', 'Unknown')
+        
+        # Look for organism name in SAMPLE_NAME
+        sample_name = sample.find('.//SAMPLE_NAME')
+        if sample_name is not None:
+            scientific_name = sample_name.find('.//SCIENTIFIC_NAME')
+            common_name = sample_name.find('.//COMMON_NAME')
+            
+            if scientific_name is not None:
+                organism_info['scientific_name'] = scientific_name.text
+            if common_name is not None:
+                organism_info['common_name'] = common_name.text
+        
+        # Look for organism in sample attributes
+        sample_attributes = sample.findall('.//SAMPLE_ATTRIBUTE')
+        for attr in sample_attributes:
+            tag = attr.find('.//TAG')
+            value = attr.find('.//VALUE')
+            if tag is not None and value is not None:
+                tag_text = tag.text.lower() if tag.text else ""
+                if 'organism' in tag_text or 'species' in tag_text:
+                    organism_info[f'attr_{tag.text}'] = value.text
     
-    # Extract RUN dates (these are often the most useful)
-    runs = root.findall('.//RUN')
-    run_dates = []
+    # Extract organism information from STUDY if available
+    study = root.find('.//STUDY')
+    if study is not None:
+        study_desc = study.find('.//STUDY_DESCRIPTION')
+        if study_desc is not None and study_desc.text:
+            organism_info['study_description'] = study_desc.text[:200]  # First 200 chars
     
-    for run in runs:
-        run_info = {
-            'run_accession': run.get('accession', 'Unknown'),
-            'published_date': run.get('published', 'Not available'),
-            'is_public': run.get('is_public', 'Unknown')
-        }
-        run_dates.append(run_info)
-    
-    dates_info['runs'] = run_dates
-    
-    # Extract file dates from SRAFiles
-    sra_files = root.findall('.//SRAFile')
-    file_dates = []
-    
-    for sra_file in sra_files:
-        file_info = {
-            'filename': sra_file.get('filename', 'Unknown'),
-            'date': sra_file.get('date', 'Not available'),
-            'size': sra_file.get('size', 'Unknown')
-        }
-        file_dates.append(file_info)
-    
-    dates_info['file_dates'] = file_dates
-    
-    return dates_info
+    return organism_info
 
-def find_earliest_date(dates_info: dict) -> dict:
-    """
-    Find the earliest date from all available dates.
-    This is often the closest to the actual submission date.
-    """
-    all_dates = []
-    
-    # Collect all date strings
-    for run in dates_info.get('runs', []):
-        if run['published_date'] != 'Not available':
-            all_dates.append(('published_date', run['published_date'], run['run_accession']))
-    
-    for file_info in dates_info.get('file_dates', []):
-        if file_info['date'] != 'Not available':
-            all_dates.append(('file_date', file_info['date'], file_info['filename']))
-    
-    if not all_dates:
-        return None
-    
-    # Parse dates and find earliest
-    parsed_dates = []
-    for date_type, date_str, identifier in all_dates:
-        try:
-            # Parse the datetime string
-            dt = datetime.strptime(date_str, '%Y-%m-%d %H:%M:%S')
-            parsed_dates.append((dt, date_type, date_str, identifier))
-        except ValueError:
-            continue
-    
-    if parsed_dates:
-        earliest = min(parsed_dates, key=lambda x: x[0])
-        return {
-            'earliest_date': earliest[2],
-            'date_type': earliest[1],
-            'source': earliest[3],
-            'parsed_datetime': earliest[0]
-        }
-    
-    return None
-
-def get_srx_submission_date_biopython(srx_accession: str, retries: int = 3) -> str:
-    """Get submission/run date using Biopython's Entrez module.
-    Attempts to extract the run_date from RUN element first,
-    then falls back to submission_date from SUBMISSION element if available.
+def get_srx_organism_biopython(srx_accession: str, retries: int = 3) -> dict:
+    """Get organism information using Biopython's Entrez module.
     Args:
         srx_accession: SRA experiment accession
         retries: Number of retries for failed Entrez queries
     Returns:
-        str: Release date in YYYY-MM-DD format
+        dict: Organism information
     """
     @retry_with_backoff(retries)
     def _fetch_with_retry(srx_accession):
@@ -264,12 +257,26 @@ def get_srx_submission_date_biopython(srx_accession: str, retries: int = 3) -> s
     if xml_data is None:
         return None
 
-    dates = parse_sra_xml_dates(xml_data)
-    earliest_date = find_earliest_date(dates)
+    organism_info = parse_sra_xml_organism(xml_data)
     
-    if earliest_date:
-        return earliest_date['parsed_datetime'].strftime('%Y-%m-%d')
-    return None
+    # Return the most relevant organism information
+    result = {'srx_accession': srx_accession}
+    if 'scientific_name' in organism_info:
+        result['organism'] = organism_info['scientific_name']
+    elif 'common_name' in organism_info:
+        result['organism'] = organism_info['common_name']
+    else:
+        # Look for organism in attributes
+        for key, value in organism_info.items():
+            if key.startswith('attr_') and 'organism' in key.lower():
+                result['organism'] = value
+                break
+        else:
+            result['organism'] = None
+    
+    result['sample_accession'] = organism_info.get('sample_accession')
+    
+    return result
 
 def join_accs(accessions: list[str]) -> str:
     """
@@ -288,33 +295,21 @@ def get_study_metadata(
     retries: int = 3,
 ) -> pd.DataFrame:
     """
-    Get study-level metadata for a list of SRA experimentaccessions.
+    Get organism metadata for a list of SRA experiment accessions.
     The metadata fields returned:
-    - sra_study: SRA study accession (the query accession)
-    - bioproject: BioProject accession (parent of study)
-    - experiments: Comma-separated list of associated experiment accessions (SRX)
-    - earliest_release_date: Earliest release date among experiments in the study
-    - latest_release_date: Latest release date among experiments in the study
+    - experiment: SRA experiment accession
+    - organism: organism name
+    - sample_acc: sample accession
     """
     query = f"""
-    WITH distinct_values AS (
-        SELECT DISTINCT
-            m.sra_study,
-            m.bioproject,
-            m.experiment,
-            m.releasedate
-        FROM `nih-sra-datastore.sra.metadata` as m
-        WHERE m.experiment IN ({join_accs(experiment_accessions)})
-        LIMIT {limit}
-    )
-    SELECT 
-        sra_study,
-        bioproject,
-        STRING_AGG(experiment, ',') as experiments,
-        MIN(releasedate) as earliest_release_date,
-        MAX(releasedate) as latest_release_date
-    FROM distinct_values
-    GROUP BY sra_study, bioproject
+    SELECT DISTINCT
+        m.experiment,
+        m.organism,
+        m.sample_acc
+    FROM `nih-sra-datastore.sra.metadata` as m
+    WHERE m.experiment IN ({join_accs(experiment_accessions)})
+    AND m.organism IS NOT NULL
+    LIMIT {limit}
     """
     
     @retry_with_backoff(retries)
@@ -350,9 +345,13 @@ def main(args: argparse.Namespace):
     # get the accessions
     if args.use_db:
         console.print(f"[yellow]Database tenant: {args.tenant}[/yellow]")
+        if args.all_accessions:
+            console.print(f"[yellow]Getting ALL accessions from the database[/yellow]")
+        else:
+            console.print(f"[yellow]Getting filtered accessions from the database[/yellow]")
         with console.status("[bold green]Getting accessions from the database...") as status:
             with db_connect() as conn:
-                args.accessions = get_records(conn, limit=args.limit)
+                args.accessions = get_records(conn, limit=args.limit, all_accessions=args.all_accessions)
         console.print(f"[cyan]Obtained {len(args.accessions)} accessions from the database[/cyan]")
     elif len(args.accessions) == 1 and os.path.exists(args.accessions[0]):
         console.print(f"[yellow]Reading accessions from {args.accessions[0]}[/yellow]")
@@ -405,25 +404,22 @@ def main(args: argparse.Namespace):
         console.print("[red]No successful batch queries[/red]")
         df_bq = pd.DataFrame()
     
-    ## explode comma separated experiments
+    # Find accessions that lack organism information
     if not df_bq.empty:
-        df_bq['experiments'] = df_bq['experiments'].str.split(',')
-        df_bq = df_bq.explode('experiments')
-
-        ## filter to only the accessions that lack a date
-        df_bq_no_date = df_bq[df_bq['earliest_release_date'].isna()]
-        ## find accession not in the bigquery results
-        acc_no_date = df_bq_no_date['experiments'].tolist()
-        acc_no_date += list(set(args.accessions) - set(df_bq['experiments'].tolist()))
+        # Filter to only the accessions that lack organism information
+        df_bq_no_organism = df_bq[df_bq['organism'].isna()]
+        # Find accessions not in the bigquery results
+        acc_no_organism = df_bq_no_organism['experiment'].tolist()
+        acc_no_organism += list(set(args.accessions) - set(df_bq['experiment'].tolist()))
     else:
-        acc_no_date = args.accessions
+        acc_no_organism = args.accessions
 
-    ## status on the number of accessions
-    console.print(f"[yellow]Accessions lacking dates: {len(acc_no_date)}[/yellow]")
+    # Status on the number of accessions
+    console.print(f"[yellow]Accessions lacking organism information: {len(acc_no_organism)}[/yellow]")
 
-    # run the entrez queries
-    results = {'srx_accession': [], 'release_date': []}
-    if acc_no_date:
+    # Run the entrez queries for missing organism information
+    entrez_results = []
+    if acc_no_organism:
         with Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
@@ -432,55 +428,56 @@ def main(args: argparse.Namespace):
             TimeRemainingColumn(),
             console=console,
         ) as progress:
-            task = progress.add_task("Running entrez queries on remaining accessions...", total=len(acc_no_date))
-            for accession in acc_no_date:
+            task = progress.add_task("Running entrez queries on remaining accessions...", total=len(acc_no_organism))
+            for accession in acc_no_organism:
                 try:
-                    date = get_srx_submission_date_biopython(accession, retries=args.retries)
-                    results['srx_accession'].append(accession)
-                    results['release_date'].append(date)
+                    organism_data = get_srx_organism_biopython(accession, retries=args.retries)
+                    if organism_data:
+                        entrez_results.append(organism_data)
+                    else:
+                        entrez_results.append({
+                            'srx_accession': accession,
+                            'organism': None,
+                            'sample_accession': None
+                        })
                 except Exception as e:
                     console.print(f"[red]Error processing {accession}: {e}[/red]")
-                    results['srx_accession'].append(accession)
-                    results['release_date'].append(None)
+                    entrez_results.append({
+                        'srx_accession': accession,
+                        'organism': None,
+                        'sample_accession': None
+                    })
                 
-                progress.update(task, completed=len(results['srx_accession']))
+                progress.update(task, completed=len(entrez_results))
                 time.sleep(0.33)
 
-    # combine the results
+    # Combine the results
     if not df_bq.empty:
-        df_bq_dates = df_bq[~df_bq['earliest_release_date'].isna()].drop(
-            columns=['sra_study', 'bioproject', 'latest_release_date']
-        ).rename(columns={'earliest_release_date': 'release_date', 'experiments': 'srx_accession'})
+        df_bq_organisms = df_bq[~df_bq['organism'].isna()].rename(
+            columns={'experiment': 'srx_accession', 'sample_acc': 'sample_accession'}
+        )[['srx_accession', 'organism',  'sample_accession']]
     else:
-        # if no results, create an empty dataframe
-        df_bq_dates = pd.DataFrame(columns=['srx_accession', 'release_date'])
+        # If no results, create an empty dataframe
+        df_bq_organisms = pd.DataFrame(columns=['srx_accession', 'organism', 'sample_accession'])
     
-    # Ensure consistent dtypes before concatenation
-    df_entrez = pd.DataFrame(results)
-    ## if no results, create an empty dataframe
+    # Create DataFrame from Entrez results
+    df_entrez = pd.DataFrame(entrez_results)
     if df_entrez.empty:
-        df_entrez = pd.DataFrame(columns=['srx_accession', 'release_date'])
+        df_entrez = pd.DataFrame(columns=['srx_accession', 'organism',  'sample_accession'])
     
-    # Convert dates to datetime
-    for df in [df_bq_dates, df_entrez]:
-        if not df.empty:
-            df['release_date'] = pd.to_datetime(df['release_date'], errors='coerce')
-    
-    # concatenate the results
-    df_results = pd.concat([df_bq_dates, df_entrez], ignore_index=True)
+    # Concatenate the results
+    df_results = pd.concat([df_bq_organisms, df_entrez], ignore_index=True)
 
-    # convert release_date to YYYY-MM-DD, handling NA values
-    df_results['release_date'] = df_results['release_date'].apply(
-        lambda x: x.strftime('%Y-%m-%d') if pd.notnull(x) else None
-    )
+    # Filter out records not in args.accessions
+    df_results = df_results[df_results['srx_accession'].isin(args.accessions)]
 
-    # filter out records not in args.accessions
-    df_results = df_results[df_results['srx_accession'].isin(args.accessions)].sort_values(by='release_date')
-
-    # for duplicate srx_accession, keep the earliest release_date
+    # For duplicate srx_accession, keep the first occurrence (BigQuery results have priority)
     df_results = df_results.drop_duplicates(subset='srx_accession', keep='first')
 
-    # save the results
+    # Sort by organism for better readability
+    df_results = df_results.sort_values(by='organism', na_position='last')
+
+    # Save the results
     outdir = os.path.dirname(args.output)
     if outdir:
         os.makedirs(outdir, exist_ok=True)

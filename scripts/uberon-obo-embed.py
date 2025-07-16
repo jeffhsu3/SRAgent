@@ -94,6 +94,7 @@ def main(args: argparse.Namespace) -> None:
     logging.info(f"Reading OBO file: {args.obo_path}")
     graph = obonet.read_obo(args.obo_path)
     documents = extract_definitions(graph, args.max_embeddings)
+    logging.info(f"Extracted {len(documents)} definitions.")
 
     if not documents:
         logging.error("No definitions found in the OBO file.")

@@ -30,7 +30,7 @@ def query_vector_db(
     """
     # Determine the cache directory using appdirs
     cache_dir = appdirs.user_cache_dir("SRAgent")
-    chroma_dir_name = "uberon-full_chroma"
+    chroma_dir_name = "mondo_chroma"
     chroma_dir_path = os.path.join(cache_dir, chroma_dir_name)
     
     # Create the cache directory if it doesn't exist
@@ -39,8 +39,8 @@ def query_vector_db(
     # Check if the Chroma DB directory exists
     if not os.path.exists(chroma_dir_path) or not os.listdir(chroma_dir_path):
         # Download and extract the tarball
-        gcp_url = "https://storage.googleapis.com/arc-scbasecount/2025-02-25/tissue_ontology/uberon-full_chroma.tar.gz"
-        tarball_path = os.path.join(cache_dir, "uberon-full_chroma.tar.gz")
+        gcp_url = "https://storage.googleapis.com/arc-scbasecount/2025-02-25/disease_ontology/mondo_chroma.tar.gz"
+        tarball_path = os.path.join(cache_dir, "mondo_chroma.tar.gz")
         
         print(f"Downloading Chroma DB from {gcp_url}...", file=sys.stdout)
         try:
@@ -78,7 +78,7 @@ def query_vector_db(
             return f"Error downloading or extracting Chroma DB: {e}"
     
     # Load the vector store
-    vector_store = load_vector_store(chroma_dir_path, collection_name="uberon")
+    vector_store = load_vector_store(chroma_dir_path, collection_name="mondo")
     
     # Query the vector store
     message = ""
@@ -103,7 +103,7 @@ def query_vector_db(
 _ONTOLOGY_GRAPH = None
 
 @lru_cache(maxsize=1)
-def get_uberon_ontology_graph(obo_path: str) -> nx.MultiDiGraph:
+def get_mondo_ontology_graph(obo_path: str) -> nx.MultiDiGraph:
     """
     Load and cache the ontology graph from the OBO file.
     Uses lru_cache to ensure the graph is only loaded once.
@@ -120,18 +120,18 @@ def all_neighbors(g, node):
 
 @tool 
 def get_neighbors(
-    uberon_id: Annotated[str, "The Uberon ID (UBERON:XXXXXXX)"],
+    mondo_id: Annotated[str, "The MONDO ID (MONDO:XXXXXXX) or PATO ID (PATO:XXXXXXX)"],
     ) -> str: 
     """
-    Get the neighbors of a given Uberon ID in the Uberon tissue ontology.
+    Get the neighbors of a given MONDO ID in the MONDO disease ontology.
     """
     # check the ID format
-    if not re.match(r"UBERON:\d{7}", uberon_id):
-        return f"Invalid Uberon ID format: \"{uberon_id}\". The format must be \"UBERON:XXXXXXX\"."
+    if not re.match(r"MONDO:\d{7}|PATO:\d{7}", mondo_id):
+        return f"Invalid MONDO ID format: \"{mondo_id}\". The format must be \"MONDO:XXXXXXX\" or \"PATO:XXXXXXX\"."
 
     # Determine the cache directory using appdirs
     cache_dir = appdirs.user_cache_dir("SRAgent")
-    obo_filename = "uberon-full.obo"
+    obo_filename = "mondo.obo"
     obo_path = os.path.join(cache_dir, obo_filename)
     
     # Create the cache directory if it doesn't exist
@@ -139,8 +139,8 @@ def get_neighbors(
     
     # Download the OBO file if it doesn't exist
     if not os.path.exists(obo_path) or not os.listdir(cache_dir):
-        obo_url = "http://purl.obolibrary.org/obo/uberon/uberon-full.obo"
-        print(f"Downloading Uberon ontology from {obo_url}...", file=sys.stdout)
+        obo_url = "https://purl.obolibrary.org/obo/mondo.obo"
+        print(f"Downloading MONDO ontology from {obo_url}...", file=sys.stdout)
         try:
             response = requests.get(obo_url)
             response.raise_for_status()
@@ -148,22 +148,23 @@ def get_neighbors(
                 f.write(response.content)
             print(f"Downloaded and saved to {obo_path}", file=sys.stdout)
         except Exception as e:
-            return f"Error downloading Uberon ontology: {e}"
+            return f"Error downloading MONDO ontology: {e}"
 
     # Get the cached ontology graph or load it if not available
-    g = get_uberon_ontology_graph(obo_path)
+    g = get_mondo_ontology_graph(obo_path)
 
     # get neighbors
+    target_prefix = ["MONDO:","PATO:"]
     message = ""
     try:
-        message += f"# Neighbors in the ontology for: \"{uberon_id}\"\n"
-        for i,node_id in enumerate(all_neighbors(g, uberon_id), 1):
-            # filter out non-UBERON nodes
-            if not node_id.startswith("UBERON:") or not g.nodes[node_id]:
+        message += f"# Neighbors in the ontology for: \"{mondo_id}\"\n"
+        for i,node_id in enumerate(all_neighbors(g, mondo_id), 1):
+            # filter out non-MONDO nodes
+            if not any(node_id.startswith(prefix) for prefix in target_prefix) or not g.nodes[node_id]:
                 continue
             # extract node name and description
             node_name = g.nodes[node_id]["name"]
-            node_def = g.nodes[node_id]["def"]
+            node_def = g.nodes[node_id].get("def")
             message += f"{i}. {node_id}\n"
             message += f"  Ontology name: {node_name}\n"
             message += f"  Description: {node_def}\n"
@@ -174,22 +175,27 @@ def get_neighbors(
         return f"Error getting neighbors: {e}"
 
     if not message:
-        message = f"No neighbors found for ID: \"{uberon_id}\"."
+        message = f"No neighbors found for ID: \"{mondo_id}\"."
     return message
 
 @tool
-def query_uberon_ols(
-    search_term: Annotated[str, "The term to search for in the Uberon ontology"]
+def query_mondo_ols(
+    search_term: Annotated[str, "The term to search for in the MONDO ontology"]
 ) -> str:
     """
-    Query the Ontology Lookup Service (OLS) for Uberon terms matching the search term.
+    Query the Ontology Lookup Service (OLS) for MONDO terms matching the search term.
+    
+    Args:
+        search_term: The disease/condition term to search for
+        
+    Returns:
+        Formatted string with MONDO search results
     """
     # Format search term for URL (handle special characters)
     import urllib.parse
     encoded_search_term = urllib.parse.quote(search_term)
-    #print(f"Encoded search term: {encoded_search_term}"); exit();
     
-    url = f"https://www.ebi.ac.uk/ols/api/search?q={encoded_search_term}&ontology=uberon"
+    url = f"https://www.ebi.ac.uk/ols/api/search?q={encoded_search_term}&ontology=mondo"
     max_retries = 2
     retry_delay = 1
     
@@ -214,7 +220,7 @@ def query_uberon_ols(
     for i, doc in enumerate(results, 1):
         # Each doc should have an 'obo_id', a 'label', and possibly a 'description'
         obo_id = doc.get("obo_id", "No ID")
-        if not obo_id.startswith("UBERON:"):
+        if not obo_id.startswith("MONDO:"):
             continue
         label = doc.get("label", "No label")
         description = doc.get("description", ["None provided"])
@@ -224,8 +230,16 @@ def query_uberon_ols(
             pass
         if not description:
             description = "None provided"
-        # print description class
+        
+        # MONDO often has synonyms which can be useful
+        synonyms = doc.get("synonym", [])
+        
         message += f"{i}. {obo_id} - {label}\n   Description: {description}\n"
+        if synonyms:
+            message += f"   Synonyms: {', '.join(synonyms[:5])}"  # Show first 5 synonyms
+            if len(synonyms) > 5:
+                message += f" (and {len(synonyms) - 5} more)"
+            message += "\n"
     return message
 
 if __name__ == "__main__":
@@ -233,20 +247,17 @@ if __name__ == "__main__":
     load_dotenv(override=True)
 
     # semantic search
-    # query = "brain"
+    # query = "pelvic organ"
     # results = query_vector_db.invoke({"query" : query})
     # print(results); exit();
 
-    # #  get neighbors
-    input = {'uberon_id': 'UBERON:0000010'}
-    #input = {'uberon_id': 'UBERON:0002421'}
-    neighbors = get_neighbors.invoke(input)
-    print(neighbors); exit();
+    # get neighbors
+    # input = {'mondo_id': 'MONDO:0005267'}
+    # neighbors = get_neighbors.invoke(input)
+    # print(neighbors); exit();
 
     # query OLS
-    input = {'search_term': "bone marrow"}
-    results = query_uberon_ols.invoke(input)
+    input = {'search_term': "heart disorder"}
+    results = query_mondo_ols.invoke(input)
     print(results)
-    
-
     

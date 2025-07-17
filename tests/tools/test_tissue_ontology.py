@@ -11,7 +11,7 @@ from SRAgent.tools.tissue_ontology import (
     get_neighbors,
     query_vector_db,
     query_uberon_ols,
-    get_ontology_graph,
+    get_uberon_ontology_graph,
     load_vector_store
 )
 
@@ -59,7 +59,7 @@ def mock_obo_graph():
 # Mock for get_ontology_graph function
 @pytest.fixture
 def mock_get_ontology_graph(mock_obo_graph):
-    with patch('SRAgent.tools.tissue_ontology.get_ontology_graph', return_value=mock_obo_graph):
+    with patch('SRAgent.tools.tissue_ontology.get_uberon_ontology_graph', return_value=mock_obo_graph):
         yield
 
 
@@ -88,9 +88,9 @@ def mock_requests_get():
 # Mock for chromadb and langchain components
 @pytest.fixture
 def mock_chroma():
-    with patch('SRAgent.tools.tissue_ontology.chromadb.PersistentClient') as mock_client, \
-         patch('SRAgent.tools.tissue_ontology.Chroma') as mock_chroma, \
-         patch('SRAgent.tools.tissue_ontology.OpenAIEmbeddings') as mock_embeddings:
+    with patch('SRAgent.tools.vector_db.chromadb.PersistentClient') as mock_client, \
+         patch('SRAgent.tools.vector_db.Chroma') as mock_chroma, \
+         patch('SRAgent.tools.vector_db.OpenAIEmbeddings') as mock_embeddings:
         
         # Configure mock chroma collection
         mock_collection = MagicMock()
@@ -139,7 +139,7 @@ def test_get_neighbors_download_obo(mock_exists, mock_requests_get, mock_cache_d
     """Test get_neighbors when OBO file needs to be downloaded"""
     with patch('os.makedirs'):
         with patch('builtins.open', mock_open()):
-            with patch('SRAgent.tools.tissue_ontology.get_ontology_graph') as mock_graph:
+            with patch('SRAgent.tools.tissue_ontology.get_uberon_ontology_graph') as mock_graph:
                 # Configure the mock graph to return an empty graph (to avoid processing neighbors)
                 mock_graph.return_value = nx.MultiDiGraph()
                 

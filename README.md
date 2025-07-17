@@ -246,6 +246,38 @@ Finding ontology terms for complex tissue descriptions:
 SRAgent tissue-ontology "Find the ontology term for the thin layer of epithelial cells lining the alveoli in lungs"
 ```
 
+## Disease-ontology agent
+
+An agent for categorizing disease descriptions using the MONDO/PATO ontology. 
+The agent helps identify the most suitable MONDO or PATO ontology term for a given disease description.
+
+* Input: Free text description of one or more diseases
+* Output: MONDO/PATO ontology IDs for each disease description
+* Workflow
+  * The agent processes each disease description separately
+  * For each description, it identifies the most suitable MONDO or PATO ontology term
+  * The agent returns the corresponding ontology ID for each disease
+
+#### Examples
+
+Categorize a single disease:
+
+```bash
+SRAgent disease-ontology "Categorize the following disease: heart disorder"
+```
+
+Finding ontology terms for specific diseases:
+
+```bash
+SRAgent disease-ontology "What is the MONDO ontology ID for congestive heart failure?"
+```
+
+Categorize multiple diseases:
+
+```bash
+SRAgent disease-ontology "Diseases: heart neoplasm, bursitis"
+```
+
 ## find-datasets agent
 
 A high-level agent for finding datasets in the SRA via `esearch` and then

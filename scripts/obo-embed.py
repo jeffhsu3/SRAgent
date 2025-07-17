@@ -34,7 +34,7 @@ def parse_cli_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description='Convert OBO file to Chroma vector store',
         epilog="""Example:
-    ./uberon-obo-embed.py /path/to/uberon.obo
+    python obo-embed.py /path/to/file.obo
     """,
         formatter_class=CustomFormatter
     )
@@ -42,11 +42,11 @@ def parse_cli_args() -> argparse.Namespace:
         'obo_path', type=str, help='Path to the OBO file'
     )
     parser.add_argument(
-        '--output-db-path', type=str, default='uberon_chroma',
+        '--output-db-path', type=str, default='chroma',
         help='Path to the output Chroma database'
     )
     parser.add_argument(
-        '--collection-name', type=str, default='uberon',
+        '--collection-name', type=str, default='collection',
         help='Name of the collection in the Chroma database'
     )
     parser.add_argument(
@@ -57,11 +57,16 @@ def parse_cli_args() -> argparse.Namespace:
         '--max-embeddings', type=int, default=None,
         help='Maximum number of embeddings to generate'
     )
+    parser.add_argument(
+        '--target-prefixes', type=str, nargs='+', default=None, 
+        help='List of annotaton prefixes to include. If not provided, all prefixes will be included.'
+    )
     return parser.parse_args()
 
 def extract_definitions(
     graph: nx.MultiDiGraph,
-    max_embeddings: int | None = None
+    max_embeddings: int | None = None,
+    target_prefixes: list[str] | None = None
 ) -> List[Document]:
     """
     Extracts definition texts, metadata, and node IDs from the ontology graph.
@@ -74,6 +79,8 @@ def extract_definitions(
     for node_id, data in graph.nodes(data=True):
         definition = data.get("def")
         if not definition:
+            continue
+        if target_prefixes and not any(node_id.startswith(prefix) for prefix in target_prefixes):
             continue
         documents.append(
             Document(
@@ -89,11 +96,37 @@ def extract_definitions(
     logging.info(f"  Extracted {len(documents)} definitions.")    
     return documents
 
+def list_records(db_path: str, collection_name: str, limit: int = 10):
+    """List records from ChromaDB collection
+    
+    Args:
+        db_path: Path to the ChromaDB database
+        collection_name: Name of the collection
+        limit: Maximum number of records to retrieve
+    """
+    # Connect to the persistent client
+    client = chromadb.PersistentClient(path=db_path)
+    collection = client.get_collection(collection_name)
+    
+    # Get records (returns first `limit` records)
+    results = collection.get(limit=limit)
+    
+    print(f"Found {len(results['ids'])} records:")
+    for i, (doc_id, document, metadata) in enumerate(zip(
+        results['ids'], 
+        results['documents'], 
+        results['metadatas']
+    )):
+        print(f"\n--- Record {i+1} ---")
+        print(f"ID: {doc_id}")
+        print(f"Metadata: {metadata}")
+        print(f"Content: {document[:500]}...") 
+
 def main(args: argparse.Namespace) -> None:
     # Read the OBO file into a graph.
     logging.info(f"Reading OBO file: {args.obo_path}")
     graph = obonet.read_obo(args.obo_path)
-    documents = extract_definitions(graph, args.max_embeddings)
+    documents = extract_definitions(graph, args.max_embeddings, target_prefixes=args.target_prefixes)
     logging.info(f"Extracted {len(documents)} definitions.")
 
     if not documents:
@@ -123,6 +156,10 @@ def main(args: argparse.Namespace) -> None:
     count = collection.count()
     logging.info(f"  Stored {len(documents)} embeddings in collection '{args.collection_name}' at '{args.output_db_path}'.")
     logging.info(f"  Collection now contains {count} total documents.")
+
+    # List records: debugging
+    #list_records(args.output_db_path, args.collection_name)
+
 
 if __name__ == "__main__":
     args = parse_cli_args()

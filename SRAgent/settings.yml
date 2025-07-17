@@ -20,6 +20,7 @@ test:
     entrez: "o4-mini"
     sragent: "o4-mini"
     tissue_ontology: "o4-mini"
+    disease_ontology: "o4-mini"
     metadata: "gpt-4.1"
     metadata_router: "o4-mini"
     convert_router: "gpt-4.1-mini"
@@ -40,6 +41,7 @@ test:
     entrez: 0.1
     sragent: 0.1
     tissue_ontology: 0.1
+    disease_ontology: 0.1
     metadata: 0.1
     convert_router: 0.1
     metadata_router: 0.1
@@ -60,6 +62,7 @@ test:
     entrez: "low"
     sragent: "medium"
     tissue_ontology: "medium"
+    disease_ontology: "medium"
     metadata: "medium"
     convert_router: "low"
     metadata_router: "medium"
@@ -80,6 +83,7 @@ test:
     entrez: "flex"
     sragent: "flex"
     tissue_ontology: "flex"
+    disease_ontology: "flex"
     metadata: "default"
     metadata_router: "flex"
     convert_router: "default"
@@ -103,6 +107,7 @@ prod:
     entrez: "o4-mini"
     sragent: "o4-mini"
     tissue_ontology: "o4-mini"
+    disease_ontology: "o4-mini"
     metadata: "gpt-4.1"
     metadata_router: "o4-mini"
     convert_router: "gpt-4.1-mini"
@@ -123,6 +128,7 @@ prod:
     entrez: 0.1
     sragent: 0.1
     tissue_ontology: 0.1
+    disease_ontology: 0.1
     metadata: 0.1
     convert_router: 0.1
     metadata_router: 0.1
@@ -143,6 +149,7 @@ prod:
     entrez: "low"
     sragent: "medium"
     tissue_ontology: "medium"
+    disease_ontology: "medium"
     metadata: "medium"
     convert_router: "low"
     metadata_router: "medium"
@@ -163,6 +170,7 @@ prod:
     entrez: "flex"
     sragent: "flex"
     tissue_ontology: "flex"
+    disease_ontology: "flex"
     metadata: "default"
     metadata_router: "flex"
     convert_router: "default"
@@ -189,6 +197,7 @@ claude:
     entrez: "medium"
     sragent: "medium"
     tissue_ontology: ""
+    disease_ontology: ""
     metadata: "high"
     convert_router: "low"
     metadata_router: "medium"

@@ -13,65 +13,13 @@ from typing import Annotated
 from functools import lru_cache
 ## 3rd party
 from langchain_core.tools import tool
-from langchain_openai import OpenAIEmbeddings
-from langchain_chroma import Chroma
-import chromadb
 import obonet
 import networkx as nx
 import appdirs
-
+## package
+from SRAgent.tools.vector_db import load_vector_store
 
 # functions
-def verify_collection(persistent_client: chromadb.PersistentClient, collection_name: str) -> None:
-    """
-    Verify that the collection exists and has documents
-    Args:
-        persistent_client: The persistent Chroma client
-        collection_name: The name of the collection to verify
-    Returns:
-        None
-    Raises:
-        Exception: If the collection does not exist or has no documents
-    """
-    try:
-        collection = persistent_client.get_collection(collection_name)
-        count = collection.count()
-        print(f"Found {count} documents in collection '{collection_name}'", file=sys.stdout)
-    except Exception as e:
-        msg = f"Error accessing collection: {e}"
-        msg += f"\nAvailable collections: {persistent_client.list_collections()}"
-        raise Exception(msg)
-
-def load_vector_store(chroma_path: str, collection_name: str="uberon") -> Chroma:
-    """
-    Load a Chroma vector store from the specified path.
-    Args:
-        chroma_path: The path to the Chroma DB directory
-        collection_name: The name of the collection to load
-    Returns:
-        A Chroma vector store
-    Raises:
-        FileNotFoundError: If the Chroma DB directory does not exist
-        Exception: If the collection does not exist or has no documents
-    """
-    # Ensure the path exists
-    if not os.path.exists(chroma_path):
-        raise FileNotFoundError(f"Chroma DB directory not found: {chroma_path}")
-
-    # Initialize embeddings
-    embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
-    
-    # Load the persistent Chroma client
-    persistent_client = chromadb.PersistentClient(path=chroma_path)
-    
-    # Load the existing vector store
-    vector_store = Chroma(
-        client=persistent_client,
-        collection_name=collection_name,
-        embedding_function=embeddings,
-    )
-    return vector_store
-
 @tool
 def query_vector_db(
     query: Annotated[str, "The semantic search query"],
@@ -130,7 +78,7 @@ def query_vector_db(
             return f"Error downloading or extracting Chroma DB: {e}"
     
     # Load the vector store
-    vector_store = load_vector_store(chroma_dir_path)
+    vector_store = load_vector_store(chroma_dir_path, collection_name="uberon")
     
     # Query the vector store
     message = ""
@@ -155,7 +103,7 @@ def query_vector_db(
 _ONTOLOGY_GRAPH = None
 
 @lru_cache(maxsize=1)
-def get_ontology_graph(obo_path: str) -> nx.MultiDiGraph:
+def get_uberon_ontology_graph(obo_path: str) -> nx.MultiDiGraph:
     """
     Load and cache the ontology graph from the OBO file.
     Uses lru_cache to ensure the graph is only loaded once.
@@ -165,6 +113,10 @@ def get_ontology_graph(obo_path: str) -> nx.MultiDiGraph:
         The ontology graph as a NetworkX MultiDiGraph
     """
     return obonet.read_obo(obo_path)
+
+def all_neighbors(g, node):
+    """Get all neighbors of a node in a directed graph, regardless of edge direction."""
+    return set(g.predecessors(node)) | set(g.successors(node))
 
 @tool 
 def get_neighbors(
@@ -199,13 +151,13 @@ def get_neighbors(
             return f"Error downloading Uberon ontology: {e}"
 
     # Get the cached ontology graph or load it if not available
-    g = get_ontology_graph(obo_path)
+    g = get_uberon_ontology_graph(obo_path)
 
     # get neighbors
     message = ""
     try:
         message += f"# Neighbors in the ontology for: \"{uberon_id}\"\n"
-        for i,node_id in enumerate(g.neighbors(uberon_id), 1):
+        for i,node_id in enumerate(all_neighbors(g, uberon_id), 1):
             # filter out non-UBERON nodes
             if not node_id.startswith("UBERON:") or not g.nodes[node_id]:
                 continue
@@ -281,11 +233,11 @@ if __name__ == "__main__":
     load_dotenv(override=True)
 
     # semantic search
-    query = "brain"
-    results = query_vector_db.invoke({"query" : query})
-    print(results); exit();
+    # query = "brain"
+    # results = query_vector_db.invoke({"query" : query})
+    # print(results); exit();
 
-    #  get neighbors
+    # #  get neighbors
     input = {'uberon_id': 'UBERON:0000010'}
     #input = {'uberon_id': 'UBERON:0002421'}
     neighbors = get_neighbors.invoke(input)

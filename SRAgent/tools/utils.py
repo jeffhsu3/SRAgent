@@ -1,6 +1,7 @@
 # import
 ## batteries
 import os
+import sys
 import json
 import random
 import decimal
@@ -196,8 +197,10 @@ def truncate_data(data, max_items: Optional[int]=None) -> dict:
     limited_data, _ = process(data)
     return limited_data
 
+
 # main
 if __name__ == '__main__':
     from dotenv import load_dotenv
     load_dotenv(override=True)
     set_entrez_access()
+    

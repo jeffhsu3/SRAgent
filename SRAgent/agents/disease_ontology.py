@@ -22,10 +22,15 @@ class MONDO_ID(BaseModel):
 # functions
 def create_disease_ontology_agent(
     model_name: Optional[str]=None,
+    temperature: Optional[float]=None,
+    reasoning_effort: Optional[str]=None,
     return_tool: bool=True,
 ) -> Callable:
     # create model
-    model = set_model(model_name=model_name, agent_name="disease_ontology")
+    model = set_model(
+        model_name=model_name, agent_name="disease_ontology", 
+        temperature=temperature, reasoning_effort=reasoning_effort
+    )
 
     # set tools
     tools = [

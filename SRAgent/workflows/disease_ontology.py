@@ -20,7 +20,7 @@ from SRAgent.agents.disease_ontology import create_disease_ontology_agent
 class MONDO_ID(BaseModel):
     id: str = Field(
         description="The MONDO/PATO term ID (MONDO:XXXXXXX or PATO:XXXXXXX) for the disease description or 'No suitable ontology term found' if no term is found."
-    )
+)
 
 class MONDO_IDS(BaseModel):
     ids: List[MONDO_ID] = Field(
@@ -30,14 +30,19 @@ class MONDO_IDS(BaseModel):
 # functions
 def create_disease_ontology_workflow(
     model_name: Optional[str]=None,
+    temperature: Optional[float]=None,
+    reasoning_effort: Optional[str]=None,
     return_tool: bool=True,
 ) -> Callable:
     # create model
-    model = set_model(model_name=model_name, agent_name="disease_ontology")
+    model = set_model(
+        model_name=model_name, agent_name="disease_ontology", 
+        temperature=temperature, reasoning_effort=reasoning_effort
+    )
 
     # set tools
     tools = [
-        create_disease_ontology_agent(),
+        create_disease_ontology_agent(model_name=model_name, temperature=temperature, reasoning_effort=reasoning_effort),
     ]
   
     # state modifier

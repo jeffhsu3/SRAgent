@@ -30,14 +30,19 @@ class UBERON_IDS(BaseModel):
 # functions
 def create_tissue_ontology_workflow(
     model_name: Optional[str]=None,
+    temperature: Optional[float]=None,
+    reasoning_effort: Optional[str]=None,
     return_tool: bool=True,
 ) -> Callable:
     # create model
-    model = set_model(model_name=model_name, agent_name="tissue_ontology")
+    model = set_model(
+        model_name=model_name, agent_name="tissue_ontology", 
+        temperature=temperature, reasoning_effort=reasoning_effort
+    )
 
     # set tools
     tools = [
-        create_tissue_ontology_agent(),
+        create_tissue_ontology_agent(model_name=model_name, temperature=temperature, reasoning_effort=reasoning_effort),
     ]
   
     # state modifier
